@@ -22,8 +22,8 @@ npx skills update -g -y
 - `cleanup-branches` — delete local branches whose PRs were squash-merged
 - `draft` — file a GitHub issue labeled `draft`
 - `fix-pr` — address review comments, failing checks, and conflicts on one PR
-- `grill-me` — stress-test a plan one decision frontier at a time
-- `herdr` — control the Herdr terminal multiplexer
+- `grill-me` — stress-test a plan one decision frontier at a time, from [mattpocock/skills](https://github.com/mattpocock/skills)
+- `herdr` — control the Herdr terminal multiplexer, from [herdr.dev](https://herdr.dev/)
 - `implement` — implement one `agent:ready` GitHub issue and open a PR
 - `on-track` — end-of-day check of what landed on `main`
 - `refine` — refine a draft issue with `/grill-me`, then mark it `agent:ready`
