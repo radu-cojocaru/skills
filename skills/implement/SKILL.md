@@ -9,7 +9,7 @@ A GitHub issue ID is usually given when this skill is invoked. If none is given,
 Read the issue. Implement **this ticket only**.
 
 - If it still has the `draft` label, or it lacks `agent:ready` and the current branch does not already track this issue, stop and point at `/refine`.
-- If it is a parent spec with sub-issues, stop and point at `/to-implement`.
+- If it is a parent spec with sub-issues, stop.
 - If the body lists blockers that are not done, stop.
 - If it already has `agent:working` and the current branch does not track this issue, stop — another agent has it.
 
