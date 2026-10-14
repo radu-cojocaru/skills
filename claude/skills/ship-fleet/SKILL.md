@@ -1,7 +1,6 @@
 ---
 name: ship-fleet
 description: Dispatch several ready tickets at once, one per non-overlapping app, each on its own /ship-bg run, which merges its own PR when the gates hold. Use when the user asks to ship a batch, ship everything ready, or run the fleet.
-disable-model-invocation: true
 ---
 
 Start several tickets at once, each in its own app, each in its own

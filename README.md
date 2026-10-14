@@ -82,7 +82,7 @@ Either way the plan ends up in the issue body, including an `## After merge` sec
 
 ## Claude Code skills
 
-All five are user-invoked only (`disable-model-invocation`). They read the project's `CLAUDE.md` for its **Shipping** section (backups, live and healthy checks after a merge) and **Ship groups** section (which directories may ship in parallel).
+All but `ship-fleet` are user-invoked only (`disable-model-invocation`). They read the project's `CLAUDE.md` for its **Shipping** section (backups, live and healthy checks after a merge) and **Ship groups** section (which directories may ship in parallel).
 
 - `ship` — launch a background agent that ships one ready issue
 - `ship-bg` — the background loop: implement, review, fix, open the PR, merge when the gates hold, run the after-merge steps
