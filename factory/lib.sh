@@ -69,6 +69,31 @@ owner() {
   echo "$OWNER"
 }
 
+# alert <key> <title> <message> [url]: one Pushover alert per key, ever.
+# GitHub does not notify you about your own account's actions, so this is the
+# only notification path. Without the keys, log only. A failed POST is logged
+# and never fails the caller.
+alert() {
+  local key=$1 title=$2 message=$3 url=${4:-}
+  local file="$STATE_DIR/alerted/${key//\//__}"
+  if [[ -e "$file" ]]; then
+    return 0
+  fi
+  log "alert [$key] $title: $message ${url:+($url)}"
+  if [[ -n "$PUSHOVER_TOKEN" && -n "$PUSHOVER_USER" ]]; then
+    if ! curl -s -m 10 -o /dev/null -X POST https://api.pushover.net/1/messages.json \
+        --data-urlencode "token=$PUSHOVER_TOKEN" \
+        --data-urlencode "user=$PUSHOVER_USER" \
+        --data-urlencode "title=$title" \
+        --data-urlencode "message=$message" \
+        --data-urlencode "url=$url"; then
+      log "alert [$key]: pushover POST failed"
+    fi
+  fi
+  mkdir -p "$(dirname "$file")"
+  : >"$file"
+}
+
 # repo_is_trusted <dir>: true when <dir> or any ancestor has accepted the
 # trust dialog in ~/.claude.json. Trust is inherited, so a clone inside a
 # trusted folder passes. Reads the file only; never writes it.

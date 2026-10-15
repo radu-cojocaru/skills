@@ -89,6 +89,8 @@ Then, once per repo:
 
 It clones the repo to `$REPOS_DIR/<repo>` if needed, creates the labels the ship skills need, warns when the repo's `CLAUDE.md` has no **Shipping** or **Ship groups** section, and checks the clone is trusted by Claude Code. A fresh clone is not; the script prints the `claude` command to run once to accept the trust prompt. It writes `~/.claude.json` never. The tick only launches in repos the script has marked set up.
 
+`factory/ship-tick.sh --dry-run` runs every check the tick makes, prints per repo what it would launch and the usage gate's state, and launches and records nothing.
+
 Run the checks with `factory/test.sh`.
 
 ### Config and state
