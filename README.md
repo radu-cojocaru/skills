@@ -22,7 +22,9 @@ npx skills update -g -y
 
 ## Workflow
 
-How a piece of work goes from an idea to `main`. Every step is a GitHub issue changing labels: `draft` → `agent:ready` → `agent:working` → `agent:done` → closed by the merged PR.
+How a piece of work goes from an idea to `main`. Every step is a GitHub issue changing labels: `draft` → `agent:ready` → `agent:working` → `agent:done` → closed by the merged PR. A run that aborts after claiming its ticket leaves it on `agent:failed` with a comment saying why; relabel it `agent:ready` to retry. `/implement` uses `agent:implemented` instead of `agent:done`, as before.
+
+Two optional labels pick the model: `model:opus` and `model:fable`. The factory reads them when it launches a ticket; without one it uses its default model. `/ship` ignores them and takes the model as an argument.
 
 ```
 /draft  →  /refine-fast  (or /refine)  →  /ship  (or /ship-fleet)
