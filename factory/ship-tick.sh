@@ -14,10 +14,12 @@ source "$(dirname "$0")/lib.sh"
 require_tools claude gh node jq flock curl
 
 DRY_RUN=false
+CLEANUP=false
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
-    *) echo "usage: $0 [--dry-run]" >&2; exit 1 ;;
+    --cleanup) CLEANUP=true ;;
+    *) echo "usage: $0 [--dry-run] [--cleanup]" >&2; exit 1 ;;
   esac
 done
 
@@ -625,9 +627,128 @@ launch_candidates() {
   done
 }
 
+# ---------------------------------------------------------------- cleanup
+
+EVENTS_KEEP_DAYS=90
+
+# The daily mode. Same lock as the tick, waiting for it: it rewrites
+# events.jsonl, and ship-cleanup.mjs --apply stops the daemon when it sees
+# no live agent, which would kill an agent a tick launched at that moment.
+take_lock_wait() {
+  exec 9>"$STATE_DIR/lock"
+  if ! flock -w 600 9; then
+    log "cleanup: the tick still holds the lock after 10 minutes, giving up"
+    exit 0
+  fi
+}
+
+# True when any background session is live from inside <clone>.
+clone_has_live_session() {
+  local clone=$1 s
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    session_is_live "$s" && return 0
+  done < <(agents_json | jq -c --arg c "$clone" '.[] | select(.kind == "background" and (.cwd == $c or (.cwd | startswith($c + "/"))))')
+  return 1
+}
+
+cleanup_step() {
+  local script="$FACTORY_DIR/../claude/skills/ship-cleanup/ship-cleanup.mjs"
+  local repos=() repo full clone todo=() skipped_live=false
+
+  # 1. ship-cleanup.mjs in every set-up repo with nothing in flight and no
+  #    live session; the worktree's copy, which updates with the factory.
+  if [[ -d "$STATE_DIR/setup" ]]; then
+    for repo in "$STATE_DIR/setup"/*; do
+      [[ -e "$repo" ]] && repos+=("$(basename "$repo")")
+    done
+  fi
+  for repo in "${repos[@]}"; do
+    full="$OWNER_LOGIN/$repo"; clone="$REPOS_DIR/$repo"
+    if [[ ! -d "$clone/.git" ]]; then
+      say "cleanup: $full: no clone at $clone, skipped"
+      continue
+    fi
+    if in_flight "$full"; then
+      say "cleanup: $full: skipped, in flight: #${IN_FLIGHT_TICKETS% }"
+      continue
+    fi
+    if clone_has_live_session "$clone"; then
+      say "cleanup: $full: skipped, a live session runs from its clone"
+      skipped_live=true
+      continue
+    fi
+    todo+=("$repo")
+  done
+  local i n=${#todo[@]} flags out
+  for ((i = 0; i < n; i++)); do
+    repo=${todo[$i]}; clone="$REPOS_DIR/$repo"
+    flags=(--json)
+    $DRY_RUN || flags+=(--apply)
+    # The daemon stop happens at most once, in the last repo, and never
+    # while another repo was skipped for a live session.
+    if (( i < n - 1 )) || $skipped_live; then flags+=(--keep-daemon); fi
+    if out=$(cd "$clone" && node "$script" "${flags[@]}" 2>&1); then
+      say "cleanup: $OWNER_LOGIN/$repo: $(jq -r '
+        (if .applied then "removed" else "would remove" end) as $v
+        | ([.removed[] | "\($v) \(.item)"] + [.skipped[] | "kept \(.item): \(.reason)"]) | if length == 0 then "nothing to clean up" else join("; ") end' <<<"$out" 2>/dev/null || echo "$out")"
+    else
+      log "cleanup: $OWNER_LOGIN/$repo: ship-cleanup.mjs failed: ${out//$'\n'/ | }"
+    fi
+  done
+
+  # 2. Events older than EVENTS_KEEP_DAYS days.
+  local events="$STATE_DIR/events.jsonl" cutoff before after
+  if [[ -f "$events" ]]; then
+    cutoff=$(date -u -d "-$EVENTS_KEEP_DAYS days" +%Y-%m-%dT%H:%M:%SZ)
+    before=$(grep -c . "$events" || true)
+    after=$(jq -c --arg c "$cutoff" 'select(.ts >= $c)' "$events" | grep -c . || true)
+    if (( before != after )); then
+      say "cleanup: events: dropping $((before - after)) of $before older than $cutoff"
+      $DRY_RUN || jq -c --arg c "$cutoff" 'select(.ts >= $c)' "$events" | write_atomic "$events"
+    else
+      say "cleanup: events: $before kept, none older than $EVENTS_KEEP_DAYS days"
+    fi
+  fi
+
+  # 3. Records of closed tickets: launches (closed or ticket closed), resumes,
+  #    orphans and alert markers.
+  local keys key closed='[]' state
+  keys=$( { launches | jq -r '.[] | "\(.full)#\(.issue)"'
+            json_file_or "$RESUMES" '{}' | jq -r 'keys[]'
+            json_file_or "$ORPHANS" '[]' | jq -r '.[]'
+            if [[ -d "$STATE_DIR/alerted" ]]; then
+              find "$STATE_DIR/alerted" -type f -printf '%f\n' | sed -n 's/^[a-z_]*://p' | grep '#' | sed 's|__|/|'
+            fi; } | sort -u)
+  for key in $keys; do
+    full=${key%#*}; n=${key#*#}
+    state=$(gh issue view "$n" --repo "$full" --json state -q .state 2>/dev/null || echo "")
+    [[ "$state" == "CLOSED" ]] && closed=$(jq -c --arg k "$key" '. + [$k]' <<<"$closed")
+  done
+  local drop
+  drop=$(launches | jq --argjson closed "$closed" '[.[] | ("\(.full)#\(.issue)") as $k | select(.closed_at != null or (($closed | index($k)) != null))] | length')
+  say "cleanup: launches: dropping $drop closed record(s); $(jq -r 'length' <<<"$closed") closed ticket(s) forgotten in resumes, orphans and alerts"
+  $DRY_RUN && return 0
+  launches | jq -c --argjson closed "$closed" '[.[] | ("\(.full)#\(.issue)") as $k | select(.closed_at == null and (($closed | index($k)) == null))]' | write_atomic "$LAUNCHES"
+  json_file_or "$RESUMES" '{}' | jq -c --argjson closed "$closed" 'with_entries(select(.key as $k | $closed | index($k) | not))' | write_atomic "$RESUMES"
+  json_file_or "$ORPHANS" '[]' | jq -c --argjson closed "$closed" 'map(select(. as $k | $closed | index($k) | not))' | write_atomic "$ORPHANS"
+  for key in $(jq -r '.[]' <<<"$closed"); do
+    rm -f "$STATE_DIR/alerted/"*":${key//\//__}"
+  done
+  # 4. The page.
+  render_dashboard
+}
+
 # ------------------------------------------------------------------- main
 
 main() {
+  if $CLEANUP; then
+    take_lock_wait
+    OWNER_LOGIN=$(owner)
+    cleanup_step
+    $DRY_RUN && say "dry run: nothing changed"
+    return 0
+  fi
   take_lock
   OWNER_LOGIN=$(owner)
   load_agents

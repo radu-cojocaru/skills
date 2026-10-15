@@ -117,7 +117,25 @@ Two warnings:
 - `git clean -x` in `~/skills-factory`, or removing and re-adding the worktree, wipes `factory/.local/`, config and state alike. Checkouts leave it alone.
 - The factory updates itself from `origin/main`, but the skills it runs come from `~/.claude/skills` and change only with `npx skills update -g -y`. A change that touches both the factory and a skill needs one manual update after merging.
 
-Logs: `journalctl -t ship-tick`.
+### How it works
+
+Every 5 minutes the tick takes a lock, then:
+
+1. **Records.** One search across the owner's private repos for open tickets on `agent:working`, `agent:review`, `agent:done` or `agent:failed`, plus each repo's open PRs. It compares them with the last snapshot and appends one event per change (claimed, review, PR opened, held, merged, closed, failed) to the event log. This is the dashboard's only data source; `/ship-bg` knows nothing about it.
+2. **Checks the runs.** A ticket on `agent:working` or `agent:review` whose session is not live (not `working` or `blocked`, or its transcript untouched for `STALE_MINUTES`) is resumed once with `claude --bg --resume`. Stale again after that, it is relabelled `agent:failed` with a comment. A ticket with no matching session at all is flagged, never relabelled. A launch whose `/ship-bg` ended without claiming its ticket is relabelled `agent:failed` too, so the factory does not relaunch it every tick.
+3. **Finds work.** Ready tickets grouped by repo. A repo launches only when `setup-repo.sh` has marked it set up, nothing is in flight there (asked of the repo directly, since search trails label changes), and no launch from the last 10 minutes is still starting.
+4. **Checks usage.** `claude -p /usage` costs nothing and reports the 5-hour and weekly limits. At or above `SESSION_MAX_PCT` or `WEEKLY_MAX_PCT` the gate closes until the reset time and `/usage` is not called again before then. A per-model weekly limit skips only that model's tickets.
+5. **Launches** the oldest ready ticket in each free repo from its clone, with the same flags `/ship` uses, on the model the `model:*` label names or `DEFAULT_MODEL`.
+6. **Renders the dashboard** and writes the last-tick heartbeat.
+
+Idle ticks, with nothing ready and nothing changed, exit in about a second without starting Claude. Pushover alerts go out once each for a failed ticket, a held PR, a ticket with no agent, a repo that needs setup, and a tick that fails.
+
+### Day to day
+
+- **Pause:** comment out the two crontab lines. Running agents are not affected.
+- **Logs:** `journalctl -t ship-tick`.
+- **Cleanup:** the daily crontab line runs `ship-tick.sh --cleanup`. It waits for the tick's lock, runs `ship-cleanup.mjs --apply` in every set-up repo with nothing in flight and no live session, drops events older than 90 days and the records of closed tickets, and re-renders the dashboard. It never stops the Claude daemon while an agent is live. `--cleanup --dry-run` shows what it would do.
+- **Retry a failed ticket:** fix the cause, then relabel it `agent:ready`.
 
 ### Dashboard
 
