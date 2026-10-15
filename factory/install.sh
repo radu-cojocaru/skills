@@ -32,11 +32,12 @@ cat <<EOF
 
 Config:   $WT_LOCAL/config.env
 State:    $WT_LOCAL/state
-Worktree: $WORKTREE (detached on origin/main; cron updates it before every tick)
+Worktree: $WORKTREE (detached on origin/main; cron updates it before every
+          tick, and runs the tick on the last good checkout when the fetch fails)
 
 Add these two lines to your crontab (crontab -e) once the trial loop is stopped:
 
-*/5 * * * * git -C ~/skills-factory fetch -q && git -C ~/skills-factory checkout -q --detach origin/main && ~/skills-factory/factory/ship-tick.sh 2>&1 | logger -t ship-tick
+*/5 * * * * (git -C ~/skills-factory fetch -q && git -C ~/skills-factory checkout -q --detach origin/main; ~/skills-factory/factory/ship-tick.sh) 2>&1 | logger -t ship-tick
 17 4 * * *  ~/skills-factory/factory/ship-tick.sh --cleanup 2>&1 | logger -t ship-tick
 
 Dashboard (one-time sudo steps, not run by this script):

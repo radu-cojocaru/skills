@@ -35,7 +35,9 @@ fi
 : "${NODE_BIN_DIR:=$HOME/.local/share/fnm/aliases/default/bin}"
 
 # node comes from fnm, whose shell hook cron never runs; claude is in ~/.local/bin.
-export PATH="$NODE_BIN_DIR:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin"
+# Prepended, not replaced: install.sh and setup-repo.sh run interactively,
+# where gh or git may live elsewhere. Cron's PATH is the fallback.
+export PATH="$NODE_BIN_DIR:$HOME/.local/bin:${PATH:-/usr/local/bin:/usr/bin:/bin}"
 
 log() {
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >&2
@@ -69,10 +71,11 @@ owner() {
   echo "$OWNER"
 }
 
-# alert <key> <title> <message> [url]: one Pushover alert per key, ever.
-# GitHub does not notify you about your own account's actions, so this is the
-# only notification path. Without the keys, log only. A failed POST is logged
-# and never fails the caller.
+# alert <key> <title> <message> [url]: one Pushover alert per key, until the
+# key's marker is removed (forget_run_alerts on a new run, --cleanup on a
+# closed ticket). GitHub does not notify you about your own account's
+# actions, so this is the only notification path. Without the keys, log only.
+# A failed POST is logged and never fails the caller.
 alert() {
   local key=$1 title=$2 message=$3 url=${4:-}
   local file="$STATE_DIR/alerted/${key//\//__}"
@@ -92,6 +95,14 @@ alert() {
   fi
   mkdir -p "$(dirname "$file")"
   : >"$file"
+}
+
+# forget_run_alerts <owner/repo#n>: drop the ticket's failed: and held:
+# markers so a new run (a relabel to agent:ready, a launch) can alert once
+# more. Markers for other keys are kept.
+forget_run_alerts() {
+  local key=${1//\//__}
+  rm -f "$STATE_DIR/alerted/failed:$key" "$STATE_DIR/alerted/held:$key"
 }
 
 # append_event <json>: one line onto state/events.jsonl, through a temp file.

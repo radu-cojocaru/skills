@@ -8,6 +8,9 @@ import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const ENDINGS = new Set(["merged", "closed", "held", "failed"]);
+// Events that report on a ticket without a run having started (a refused
+// launch or resume): they attach to an open run but never open one.
+const NO_START = new Set(["error", "needs_setup"]);
 const RECENT = 50;
 
 export function buildRuns(events, now = Date.now()) {
@@ -18,6 +21,7 @@ export function buildRuns(events, now = Date.now()) {
     const key = `${e.repo}#${e.issue}`;
     let run = open.get(key);
     const starts = e.type === "launch" || e.type === "claimed";
+    if ((!run || run.ended) && NO_START.has(e.type)) continue;
     if (!run || (starts && run.ended)) {
       run = { repo: e.repo, issue: Number(e.issue), title: e.title ?? "", url: e.url ?? "", agent: null, model: null,
               pr: null, started: e.ts, ended: null, outcome: "running", reason: null, resumes: 0, events: [] };

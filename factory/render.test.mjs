@@ -59,6 +59,17 @@ test("events without a repo/issue (gate, error) do not make runs", () => {
   assert.ok(runs.every((r) => r.repo && r.issue));
 });
 
+test("an error event for a ticket with no run does not open one", () => {
+  const runs = buildRuns([
+    { ts: "2026-10-15T10:00:00Z", type: "error", repo: "owner/app", issue: 99, reason: "launch refused" },
+    { ts: "2026-10-15T10:05:00Z", type: "launch", repo: "owner/app", issue: 98, title: "x" },
+    { ts: "2026-10-15T10:10:00Z", type: "error", repo: "owner/app", issue: 98, reason: "resume refused" },
+  ], NOW);
+  assert.equal(byKey(runs, "owner/app", 99).length, 0);
+  assert.equal(byKey(runs, "owner/app", 98).length, 1);
+  assert.deepEqual(byKey(runs, "owner/app", 98)[0].events, ["launch", "error"]);
+});
+
 test("the recent list is capped at 50, newest first", () => {
   const many = [];
   for (let i = 1; i <= 60; i++) {

@@ -224,6 +224,7 @@ record_step() {
     key="$(jq -r .repo <<<"$ev")#$(jq -r .issue <<<"$ev")"
     log "event: $type $key"
     case "$type" in
+      claimed) forget_run_alerts "$key" ;;
       failed) alert "failed:$key" "Ticket failed: $key" "$(jq -r '"\(.title): \(.reason)"' <<<"$ev")" "$(jq -r .url <<<"$ev")" ;;
       held)   alert "held:$key" "PR held: $key" "$(jq -r '"\(.title): \(.reason). The repo is blocked until it is merged or closed."' <<<"$ev")" "$(jq -r '.pr.url // .url' <<<"$ev")" ;;
     esac
@@ -349,12 +350,15 @@ json_file_or() { if [[ -f "$1" ]]; then cat "$1"; else echo "$2"; fi; }
 logs_tail() {
   local s=$1 n=${2:-20} path text
   path=$(transcript_path "$s")
+  # `|| true` on both: pipefail is on, and a torn transcript line (jq exits 2)
+  # or an empty dump (grep -v exits 1) would fire the ERR trap from inside
+  # the caller's command substitution.
   if [[ -f "$path" ]]; then
-    text=$(jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' "$path" 2>/dev/null | tail -n "$n")
+    text=$(jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' "$path" 2>/dev/null | tail -n "$n" || true)
   fi
   if [[ -z "${text:-}" ]]; then
     text=$(claude logs "$(jq -r .id <<<"$s")" 2>/dev/null \
-      | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g' | tr -d '\r' | grep -v '^[[:space:]]*$' | tail -n "$n")
+      | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g' | tr -d '\r' | grep -v '^[[:space:]]*$' | tail -n "$n" || true)
   fi
   echo "$text"
 }
@@ -598,6 +602,7 @@ launch_one() {
   fi
 
   log "launched $full#$issue as $name ($id) on $model"
+  forget_run_alerts "$full#$issue"
   event launch "repo=$full" "issue=$issue" "title=$title" "agent=$name" "model=$model" "url=https://github.com/$full/issues/$issue"
   launches | jq -c --arg repo "$repo" --arg full "$full" --argjson issue "$issue" --arg title "$title" \
       --arg name "$name" --arg model "$model" --arg id "$id" --arg ts "$TICK_TS" \
@@ -719,7 +724,8 @@ cleanup_step() {
             json_file_or "$RESUMES" '{}' | jq -r 'keys[]'
             json_file_or "$ORPHANS" '[]' | jq -r '.[]'
             if [[ -d "$STATE_DIR/alerted" ]]; then
-              find "$STATE_DIR/alerted" -type f -printf '%f\n' | sed -n 's/^[a-z_]*://p' | grep '#' | sed 's|__|/|'
+              # `|| true`: no ticket markers (only error:/needs_setup: ones) is not an error under pipefail.
+              find "$STATE_DIR/alerted" -type f -printf '%f\n' | sed -n 's/^[a-z_]*://p' | { grep '#' || true; } | sed 's|__|/|'
             fi; } | sort -u)
   for key in $keys; do
     full=${key%#*}; n=${key#*#}
@@ -801,4 +807,6 @@ main() {
   fi
 }
 
-main
+# `main || …`: a non-zero return (a failed launch) must not re-enter the ERR
+# trap, which would overwrite last-tick.json and alert a second time.
+main || exit 1

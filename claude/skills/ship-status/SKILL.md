@@ -23,17 +23,18 @@ gh search issues --owner "$owner" --visibility private --archived=false --state 
   --label agent:working --label agent:review --label agent:done --label agent:failed \
   --json repository,number,title,updatedAt,labels,url
 gh search prs --owner "$owner" --visibility private --archived=false --state open \
-  --json repository,number,title,headRefName,url
+  --json repository,number,title,url
 ```
 
 `gh search` ORs its `--label` flags (unlike `gh issue list`, where two flags
 mean AND), so one call returns every ticket on any of the four labels.
 
-Search returns neither CI nor merge state. Look those up per PR, for the few
-open ones that belong to a ticket in the table:
+Search returns neither the branch name nor CI or merge state (`gh search prs
+--json` has no `headRefName`). Look those up per PR, for the few open ones
+whose title or number matches a ticket in the table:
 
 ```
-gh pr view <n> --repo <owner/repo> --json statusCheckRollup,reviewDecision,mergeable
+gh pr view <n> --repo <owner/repo> --json headRefName,statusCheckRollup,reviewDecision,mergeable
 ```
 
 `agent:done` is in that search too, on purpose. An open ticket with
