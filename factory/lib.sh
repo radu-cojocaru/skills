@@ -94,6 +94,77 @@ alert() {
   : >"$file"
 }
 
+# append_event <json>: one line onto state/events.jsonl, through a temp file.
+# Call it only while holding the tick's lock.
+append_event() {
+  local events="$STATE_DIR/events.jsonl" line
+  line=$(jq -c . <<<"$1")
+  { if [[ -f "$events" ]]; then cat "$events"; fi; echo "$line"; } | write_atomic "$events"
+}
+
+# launches_json: launches.json, or [] when there is none.
+launches_json() {
+  if [[ -f "$STATE_DIR/launches.json" ]]; then cat "$STATE_DIR/launches.json"; else echo '[]'; fi
+}
+
+# agents_json: `claude agents --json --all`, fetched once per process. A local
+# call that starts no session. Set AGENTS_JSON to override.
+agents_json() {
+  if [[ -z "${AGENTS_JSON:-}" ]]; then
+    AGENTS_JSON=$(claude agents --json --all 2>/dev/null || true)
+    [[ -z "$AGENTS_JSON" ]] && AGENTS_JSON='[]'
+  fi
+  echo "$AGENTS_JSON"
+}
+
+# ticket_session <owner/repo> <issue>: the background session for a ticket,
+# as one JSON object, or nothing. Its name is ship-<n> or ship-<n>-… AND its
+# cwd is the repo's clone or inside it: issue numbers repeat across repos.
+# The one recorded in launches.json wins; else the newest startedAt.
+ticket_session() {
+  local full=$1 issue=$2 clone preferred
+  clone="$REPOS_DIR/${full#*/}"
+  preferred=$(launches_json | jq -r --arg full "$full" --argjson issue "$issue" \
+    '[.[] | select(.full == $full and .issue == $issue)] | last | .session_id // empty')
+  agents_json | jq -c --arg n "$issue" --arg c "$clone" --arg pref "$preferred" '
+    [.[] | select(.kind == "background"
+                  and ((.name == "ship-" + $n) or (.name | startswith("ship-" + $n + "-")))
+                  and (.cwd == $c or (.cwd | startswith($c + "/"))))]
+    | ((map(select($pref != "" and .id == $pref)) | first) // (sort_by(.startedAt) | last) // empty)'
+}
+
+# transcript_path <session json>: ~/.claude/projects/<cwd with / -> ->/<sessionId>.jsonl
+transcript_path() {
+  local cwd sid
+  cwd=$(jq -r '.cwd' <<<"$1")
+  sid=$(jq -r '.sessionId' <<<"$1")
+  echo "$HOME/.claude/projects/${cwd//\//-}/$sid.jsonl"
+}
+
+# session_is_live <session json>: state working or blocked AND the transcript
+# changed in the last STALE_MINUTES. A session that dies mid-step keeps
+# reading `working` forever, and the daemon restores that state on restart
+# (see ticketIsClosed() in claude/skills/ship-cleanup/ship-cleanup.mjs).
+session_is_live() {
+  local s=$1 state path
+  [[ -z "$s" ]] && return 1
+  state=$(jq -r '.state // ""' <<<"$s")
+  [[ "$state" == "working" || "$state" == "blocked" ]] || return 1
+  path=$(transcript_path "$s")
+  [[ -f "$path" ]] || return 1
+  [[ -n "$(find "$path" -mmin "-$STALE_MINUTES" 2>/dev/null)" ]]
+}
+
+# live_session <owner/repo> <issue>: prints the id of the ticket's live
+# session, or nothing.
+live_session() {
+  local s
+  s=$(ticket_session "$1" "$2")
+  if session_is_live "$s"; then
+    jq -r '.id' <<<"$s"
+  fi
+}
+
 # repo_is_trusted <dir>: true when <dir> or any ancestor has accepted the
 # trust dialog in ~/.claude.json. Trust is inherited, so a clone inside a
 # trusted folder passes. Reads the file only; never writes it.
