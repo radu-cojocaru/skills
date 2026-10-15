@@ -99,7 +99,8 @@ event() {
   json=$(jq -nc --arg ts "$TICK_TS" --arg type "$type" '{ts: $ts, type: $type}')
   local kv
   for kv in "$@"; do
-    json=$(jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" '. + {($k): $v}' <<<"$json")
+    json=$(jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" \
+      '. + {($k): (if $k == "issue" then ($v | tonumber? // $v) else $v end)}' <<<"$json")
   done
   append_event "$json"
 }
@@ -109,6 +110,8 @@ event() {
 SNAPSHOT="$STATE_DIR/snapshot.json"
 RECORD_EVENTS=0
 IN_FLIGHT_COUNT=0
+ISSUES="[]"
+SESSIONS="{}"
 
 # Step 2: compare GitHub's in-flight tickets with the last snapshot, append
 # one event per change (record.mjs decides), alert on failed and held.
@@ -147,14 +150,19 @@ record_step() {
     lookups=$(jq -c --arg k "$key" --arg v "$look" '.[$k] = ((.[$k] // {}) + {last_comment: $v})' <<<"$lookups")
   done
 
-  # Live sessions for every in-flight ticket and every open launch.
-  live='[]'
+  # Sessions for every in-flight ticket and every open launch:
+  # SESSIONS = {key: {session, live}}; live = the keys with a live session.
+  local s is_live
+  SESSIONS='{}'
   for key in $(jq -r '.[] | "\(.repository.nameWithOwner)#\(.number)"' <<<"$issues"; open_launches | jq -r '.[] | "\(.full)#\(.issue)"'); do
     full=${key%#*}; n=${key#*#}
-    if [[ -n "$(live_session "$full" "$n")" ]]; then
-      live=$(jq -c --arg k "$key" '. + [$k] | unique' <<<"$live")
-    fi
+    s=$(ticket_session "$full" "$n")
+    is_live=false
+    session_is_live "$s" && is_live=true
+    SESSIONS=$(jq -c --arg k "$key" --argjson s "${s:-null}" --argjson l "$is_live" '. + {($k): {session: $s, live: $l}}' <<<"$SESSIONS")
   done
+  live=$(jq -c '[to_entries[] | select(.value.live) | .key]' <<<"$SESSIONS")
+  ISSUES=$issues
   for key in $(jq -r --argjson snap "$snapshot" --argjson live "$live" \
       '.[] | select(.labels | map(.name) | index("agent:done"))
        | "\(.repository.nameWithOwner)#\(.number)"
@@ -310,11 +318,171 @@ pick_candidates() {
   done
 }
 
+# ------------------------------------------------------- stale runs
+
+RESUMES="$STATE_DIR/resumes.json"
+ORPHANS="$STATE_DIR/orphans.json"
+STALE_ACTED=0
+
+json_file_or() { if [[ -f "$1" ]]; then cat "$1"; else echo "$2"; fi; }
+
+# The last lines of a session's output: the transcript's last assistant text
+# when it exists (claude logs is a terminal dump, unreadable in a comment).
+logs_tail() {
+  local s=$1 n=${2:-20} path text
+  path=$(transcript_path "$s")
+  if [[ -f "$path" ]]; then
+    text=$(jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text") | .text' "$path" 2>/dev/null | tail -n "$n")
+  fi
+  if [[ -z "${text:-}" ]]; then
+    text=$(claude logs "$(jq -r .id <<<"$s")" 2>/dev/null \
+      | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/\x1b\][^\x07]*\x07//g' | tr -d '\r' | grep -v '^[[:space:]]*$' | tail -n "$n")
+  fi
+  echo "$text"
+}
+
+# Mark a launch record closed.
+close_launch() {
+  local key=$1 reason=$2
+  launches | jq -c --arg full "${key%#*}" --argjson issue "${key#*#}" --arg ts "$TICK_TS" --arg why "$reason" \
+    'map(if .full == $full and .issue == $issue and .closed_at == null then . + {closed_at: $ts, closed_reason: $why} else . end)' \
+    | write_atomic "$LAUNCHES"
+}
+
+# Step 2b, every tick: resume runs that stopped, fail those that stopped
+# twice, flag tickets with no agent, and fail launches /ship-bg declined.
+stale_step() {
+  local resumes orphans tickets launches_in l key full n s look
+  resumes=$(json_file_or "$RESUMES" '{}')
+  orphans=$(json_file_or "$ORPHANS" '[]')
+
+  tickets=$(jq -c --argjson sessions "$SESSIONS" --argjson resumes "$resumes" --argjson orphans "$orphans" '
+    [.[] | ("\(.repository.nameWithOwner)#\(.number)") as $k
+     | {key: $k, labels: (.labels | map(.name)), session: $sessions[$k].session, live: ($sessions[$k].live // false),
+        resume: $resumes[$k], orphaned: (($orphans | index($k)) != null)}]' <<<"$ISSUES")
+
+  launches_in='[]'
+  while IFS= read -r l; do
+    [[ -z "$l" ]] && continue
+    key=$(jq -r '"\(.full)#\(.issue)"' <<<"$l"); full=${key%#*}; n=${key#*#}
+    look=$(gh issue view "$n" --repo "$full" --json state,labels 2>/dev/null || echo '{"state":"OPEN","labels":[]}')
+    launches_in=$(jq -c --argjson l "$l" --arg k "$key" --argjson look "$look" --argjson sessions "$SESSIONS" \
+      '. + [$l + {key: $k, live: ($sessions[$k].live // false), ticket_state: $look.state, ticket_labels: ($look.labels | map(.name))}]' <<<"$launches_in")
+  done < <(open_launches | jq -c '.[]')
+
+  local out gate_is_open=false
+  # A resume needs the gate; check it only when a stale ticket needs one.
+  if jq -e --argjson sessions "$SESSIONS" --argjson resumes "$resumes" '
+       any(.[]; (.labels | index("agent:working") or index("agent:review")) and (.live | not) and .session != null and .resume == null)' <<<"$tickets" >/dev/null; then
+    check_gate
+    gate_open && gate_is_open=true
+  fi
+  out=$(jq -nc --arg now "$TICK_TS" --argjson gate "$gate_is_open" --argjson grace "$LAUNCH_GRACE_SECS" \
+          --argjson tickets "$tickets" --argjson launches "$launches_in" \
+          '{now: $now, gate_open: $gate, grace_secs: $grace, tickets: $tickets, launches: $launches}' \
+        | node "$FACTORY_DIR/stale.mjs")
+
+  local a action reason
+  while IFS= read -r a; do
+    [[ -z "$a" ]] && continue
+    action=$(jq -r .action <<<"$a"); key=$(jq -r .key <<<"$a"); full=${key%#*}; n=${key#*#}
+    reason=$(jq -r '.reason // ""' <<<"$a")
+    s=$(jq -c '.session // empty' <<<"$a")
+    say "$key: $action${reason:+ ($reason)}${s:+, session $(jq -r .id <<<"$s") $(jq -r .state <<<"$s")}"
+    $DRY_RUN && continue
+    STALE_ACTED=$((STALE_ACTED + 1))
+    case "$action" in
+      defer)
+        log "$key: resume deferred, gate closed"
+        ;;
+      resume)
+        do_resume "$key" "$s"
+        ;;
+      fail)
+        local labels_off
+        labels_off=$(jq -r '.labels | map("--remove-label", .) | .[]' <<<"$a")
+        # shellcheck disable=SC2086
+        gh issue edit "$n" --repo "$full" --add-label agent:failed $labels_off >/dev/null
+        gh issue comment "$n" --repo "$full" --body "$reason; last lines:
+
+\`\`\`
+$(logs_tail "$s")
+\`\`\`" >/dev/null
+        log "$key: marked agent:failed (stale after a resume)"
+        resumes=$(jq -c --arg k "$key" 'del(.[$k])' <<<"$resumes")
+        close_launch "$key" "stale after a resume"
+        ;;
+      orphan)
+        orphans=$(jq -c --arg k "$key" '. + [$k] | unique' <<<"$orphans")
+        event orphan "repo=$full" "issue=$n" "reason=$reason" "url=https://github.com/$full/issues/$n" \
+          "title=$(jq -r --arg k "$key" '.[] | select("\(.repository.nameWithOwner)#\(.number)" == $k) | .title' <<<"$ISSUES")"
+        alert "orphan:$key" "In flight, no agent found: $key" \
+          "$key is on agent:working or agent:review but no ship-$n session runs from its clone. The repo is blocked until it is dealt with." \
+          "https://github.com/$full/issues/$n"
+        ;;
+      decline)
+        local sid name
+        sid=$(jq -r .session_id <<<"$a"); name=$(jq -r .name <<<"$a")
+        s=$(agents_json | jq -c --arg id "$sid" '[.[] | select(.id == $id)] | first // empty')
+        gh issue edit "$n" --repo "$full" --add-label agent:failed --remove-label agent:ready >/dev/null
+        gh issue comment "$n" --repo "$full" --body "$reason (run \`$name\`, session \`$sid\`); last lines:
+
+\`\`\`
+$([[ -n "$s" ]] && logs_tail "$s" || echo "(session $sid not found)")
+\`\`\`" >/dev/null
+        log "$key: marked agent:failed (launch declined)"
+        close_launch "$key" "declined"
+        ;;
+      close)
+        close_launch "$key" "$reason"
+        ;;
+    esac
+  done < <(jq -c '.actions[]' <<<"$out")
+
+  $DRY_RUN && return 0
+  # Forget resumes and orphans of tickets no longer in flight.
+  local inflight
+  inflight=$(jq -c '[.[] | "\(.repository.nameWithOwner)#\(.number)"]' <<<"$ISSUES")
+  resumes=$(jq -c --argjson k "$inflight" 'with_entries(select(.key as $x | $k | index($x)))' <<<"$resumes")
+  orphans=$(jq -c --argjson k "$inflight" 'map(select(. as $x | $k | index($x)))' <<<"$orphans")
+  [[ "$resumes" != "$(json_file_or "$RESUMES" '{}')" ]] && write_atomic "$RESUMES" <<<"$resumes"
+  [[ "$orphans" != "$(json_file_or "$ORPHANS" '[]')" ]] && write_atomic "$ORPHANS" <<<"$orphans"
+  return 0
+}
+
+do_resume() {
+  local key=$1 s=$2 full=${1%#*} n=${1#*#}
+  local id sid state name out nid launch
+  id=$(jq -r .id <<<"$s"); sid=$(jq -r .sessionId <<<"$s"); state=$(jq -r .state <<<"$s")
+  name=$(jq -r '.name // empty' <<<"$s"); [[ "$name" == ship-* ]] || name="ship-$n"
+  [[ "$state" == "working" ]] && claude stop "$id" >/dev/null 2>&1
+  # --name, or the copy is listed under its prompt once it stops.
+  if ! out=$(cd "$REPOS_DIR/${full#*/}" && claude --bg --resume "$sid" --name "$name" "continue" 2>&1); then
+    log "error: resume of $key ($sid) refused: ${out//$'\n'/ | }"
+    event error "repo=$full" "issue=$n" "reason=resume refused: ${out:0:400}"
+    alert "error:$TICK_TS:$key" "ship-tick: resume refused" "$key: ${out:0:400}" "https://github.com/$full/issues/$n"
+    return 0
+  fi
+  nid=$(awk -F' · ' '/^backgrounded · /{print $2; exit}' <<<"$out")
+  launch=$(launches | jq -c --arg full "$full" --argjson issue "$n" '[.[] | select(.full == $full and .issue == $issue)] | last // {}')
+  log "$key: resumed $id as ${nid:-?}"
+  event resume "repo=$full" "issue=$n" "agent=$(jq -r '.name // ""' <<<"$launch")" "model=$(jq -r '.model // ""' <<<"$launch")" \
+    "url=https://github.com/$full/issues/$n" "title=$(jq -r '.title // ""' <<<"$launch")"
+  json_file_or "$RESUMES" '{}' | jq -c --arg k "$key" --arg id "${nid:-$id}" --arg ts "$TICK_TS" '. + {($k): {session_id: $id, resumed_at: $ts}}' \
+    | write_atomic "$RESUMES"
+  resumes=$(cat "$RESUMES")
+  if [[ -n "$nid" ]]; then
+    launches | jq -c --arg full "$full" --argjson issue "$n" --arg id "$nid" \
+      'map(if .full == $full and .issue == $issue and .closed_at == null then . + {session_id: $id} else . end)' | write_atomic "$LAUNCHES"
+  fi
+}
+
 # ------------------------------------------------------------- usage gate
 
 # Sets GATE. Writes gate.json and gate-closed-until unless --dry-run.
 check_gate() {
   local until now
+  [[ -n "$GATE" ]] && return 0   # once per tick
   if [[ -f "$GATE_CLOSED_UNTIL" ]]; then
     until=$(cat "$GATE_CLOSED_UNTIL")
     now=$(date -u +%s)
@@ -459,8 +627,13 @@ main() {
     save_last_tick idle
     return 0
   fi
+
+  # A run can die while nothing on GitHub changes, so this runs even with
+  # nothing ready.
+  stale_step
+
   if (( ready_count == 0 )); then
-    say "nothing ready ($IN_FLIGHT_COUNT in flight, $RECORD_EVENTS event(s))"
+    say "nothing ready ($IN_FLIGHT_COUNT in flight, $RECORD_EVENTS event(s), $STALE_ACTED stale action(s))"
     save_last_tick idle
     return 0
   fi

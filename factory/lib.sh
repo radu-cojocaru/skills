@@ -120,16 +120,24 @@ agents_json() {
 # ticket_session <owner/repo> <issue>: the background session for a ticket,
 # as one JSON object, or nothing. Its name is ship-<n> or ship-<n>-… AND its
 # cwd is the repo's clone or inside it: issue numbers repeat across repos.
-# The one recorded in launches.json wins; else the newest startedAt.
+# The one recorded in resumes.json wins, then the one in launches.json, else
+# the newest startedAt.
 ticket_session() {
   local full=$1 issue=$2 clone preferred
   clone="$REPOS_DIR/${full#*/}"
-  preferred=$(launches_json | jq -r --arg full "$full" --argjson issue "$issue" \
+  preferred=""
+  if [[ -f "$STATE_DIR/resumes.json" ]]; then
+    preferred=$(jq -r --arg k "$full#$issue" '.[$k].session_id // empty' "$STATE_DIR/resumes.json")
+  fi
+  [[ -z "$preferred" ]] && preferred=$(launches_json | jq -r --arg full "$full" --argjson issue "$issue" \
     '[.[] | select(.full == $full and .issue == $issue)] | last | .session_id // empty')
+  # The recorded id matches whatever its name: a resumed copy is listed under
+  # its prompt ("continue") once it stops.
   agents_json | jq -c --arg n "$issue" --arg c "$clone" --arg pref "$preferred" '
     [.[] | select(.kind == "background"
-                  and ((.name == "ship-" + $n) or (.name | startswith("ship-" + $n + "-")))
-                  and (.cwd == $c or (.cwd | startswith($c + "/"))))]
+                  and (($pref != "" and .id == $pref)
+                       or (((.name == "ship-" + $n) or (.name | startswith("ship-" + $n + "-")))
+                           and (.cwd == $c or (.cwd | startswith($c + "/"))))))]
     | ((map(select($pref != "" and .id == $pref)) | first) // (sort_by(.startedAt) | last) // empty)'
 }
 
