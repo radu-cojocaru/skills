@@ -22,7 +22,9 @@ npx skills update -g -y
 
 ## Workflow
 
-How a piece of work goes from an idea to `main`. Every step is a GitHub issue changing labels: `draft` → `agent:ready` → `agent:working` → `agent:done` → closed by the merged PR.
+How a piece of work goes from an idea to `main`. Every step is a GitHub issue changing labels: `draft` → `agent:ready` → `agent:working` → `agent:done` → closed by the merged PR. A run that aborts after claiming its ticket leaves it on `agent:failed` with a comment saying why; relabel it `agent:ready` to retry. `/implement` uses `agent:implemented` instead of `agent:done`, as before.
+
+Two optional labels pick the model: `model:opus` and `model:fable`. The factory reads them when it launches a ticket; without one it uses its default model. `/ship` ignores them and takes the model as an argument.
 
 ```
 /draft  →  /refine-fast  (or /refine)  →  /ship  (or /ship-fleet)
@@ -64,6 +66,91 @@ Either way the plan ends up in the issue body, including an `## After merge` sec
 - **Hold a merge** by adding the `no-automerge` label to the issue or PR. The agent leaves the PR open and says why.
 - **When a run stops short** (red CI after its one fix, a review comment it rejected), finish it with `/fix-pr <pr>`.
 - **`/ship-cleanup`** removes the worktrees, branches and job records finished runs leave behind.
+
+## Factory
+
+A lightweight software factory for every private repo on the account. Every 5 minutes, cron on the devbox looks for `agent:ready` tickets and, for each repo with nothing in flight, launches one `/ship-bg` run on its oldest ready ticket. `/ship-bg` does the rest: build, review, PR, CI, merge, after-merge steps. A dashboard page on the tailnet shows what the factory is doing and has done. It is built for low volume: one ticket in flight per repo, no global cap, with the 5-hour and weekly usage limits as the only throttle.
+
+The code is in `factory/`. It has no `SKILL.md`, so `npx skills` ignores it.
+
+### Install
+
+```bash
+factory/install.sh
+```
+
+It creates `~/skills-factory`, a detached worktree of this repo on `origin/main`, plus `factory/.local/` and `config.env` inside it, then prints the two crontab lines and the one-time sudo steps for the dashboard. It is idempotent and never edits the crontab or runs sudo: you add the lines yourself. Cron updates the worktree before every tick, so a merged change to the factory takes effect on the next tick.
+
+Then, once per repo:
+
+```bash
+~/skills-factory/factory/setup-repo.sh <owner/repo>
+```
+
+It clones the repo to `$REPOS_DIR/<repo>` if needed, creates the labels the ship skills need, warns when the repo's `CLAUDE.md` has no **Shipping** or **Ship groups** section, and checks the clone is trusted by Claude Code. A fresh clone is not; the script prints the `claude` command to run once to accept the trust prompt. It writes `~/.claude.json` never. The tick only launches in repos the script has marked set up.
+
+`factory/ship-tick.sh --dry-run` runs every check the tick makes, prints per repo what it would launch and the usage gate's state, and launches and records nothing.
+
+Run the checks with `factory/test.sh`.
+
+### Config and state
+
+`~/skills-factory/factory/.local/config.env` (mode 600), plain `KEY=value`. Every key is optional. `config.example.env` documents them:
+
+| Key | Default | Meaning |
+| - | - | - |
+| `OWNER` | the logged-in `gh` user | whose private repos to scan |
+| `SESSION_MAX_PCT` | `70` | skip launches at or above this 5-hour usage |
+| `WEEKLY_MAX_PCT` | `90` | skip launches at or above this weekly usage |
+| `DEFAULT_MODEL` | `sonnet` | model when the ticket has no `model:*` label |
+| `REPOS_DIR` | `$HOME` | where repo clones live (`$REPOS_DIR/<repo>`) |
+| `EXCLUDE_REPOS` | empty | space-separated repo names to skip |
+| `WWW_DIR` | `/srv/ship-factory/www` | where the dashboard page is written |
+| `PUSHOVER_TOKEN`, `PUSHOVER_USER` | empty | alerts; without them, log only |
+| `STALE_MINUTES` | `60` | a `working` session whose transcript has not changed for this long counts as dead |
+| `NODE_BIN_DIR` | fnm's `default` alias | prepended to `PATH` so cron finds `node` |
+
+State lives in `~/skills-factory/factory/.local/state/`: the lock, setup markers, launch records, the usage gate's reset time, the event log and the last-tick heartbeat.
+
+Two warnings:
+
+- `git clean -x` in `~/skills-factory`, or removing and re-adding the worktree, wipes `factory/.local/`, config and state alike. Checkouts leave it alone.
+- The factory updates itself from `origin/main`, but the skills it runs come from `~/.claude/skills` and change only with `npx skills update -g -y`. A change that touches both the factory and a skill needs one manual update after merging.
+
+### How it works
+
+Every 5 minutes the tick takes a lock, then:
+
+1. **Records.** One search across the owner's private repos for open tickets on `agent:working`, `agent:review`, `agent:done` or `agent:failed`, plus each repo's open PRs. It compares them with the last snapshot and appends one event per change (claimed, review, PR opened, held, merged, closed, failed) to the event log. This is the dashboard's only data source; `/ship-bg` knows nothing about it.
+2. **Checks the runs.** A ticket on `agent:working` or `agent:review` whose session is not live (not `working` or `blocked`, or its transcript untouched for `STALE_MINUTES`) is resumed once with `claude --bg --resume`. Stale again after that, it is relabelled `agent:failed` with a comment. A ticket with no matching session at all is flagged, never relabelled. A launch whose `/ship-bg` ended without claiming its ticket is relabelled `agent:failed` too, so the factory does not relaunch it every tick.
+3. **Finds work.** Ready tickets grouped by repo. A repo launches only when `setup-repo.sh` has marked it set up, nothing is in flight there (asked of the repo directly, since search trails label changes), and no launch from the last 10 minutes is still starting.
+4. **Checks usage.** `claude -p /usage` costs nothing and reports the 5-hour and weekly limits. At or above `SESSION_MAX_PCT` or `WEEKLY_MAX_PCT` the gate closes until the reset time and `/usage` is not called again before then. A per-model weekly limit skips only that model's tickets.
+5. **Launches** the oldest ready ticket in each free repo from its clone, with the same flags `/ship` uses, on the model the `model:*` label names or `DEFAULT_MODEL`.
+6. **Renders the dashboard** and writes the last-tick heartbeat.
+
+Idle ticks, with nothing ready and nothing changed, exit in about a second without starting Claude. Pushover alerts go out once each for a failed ticket, a held PR, a ticket with no agent, a repo that needs setup, and a tick that fails. A ticket relabelled `agent:ready` and run again can alert once more.
+
+### Day to day
+
+- **Pause:** comment out the two crontab lines. Running agents are not affected.
+- **Logs:** `journalctl -t ship-tick`.
+- **Cleanup:** the daily crontab line runs `ship-tick.sh --cleanup`. It waits for the tick's lock, runs `ship-cleanup.mjs --apply` in every set-up repo with nothing in flight and no live session, drops events older than 90 days and the records of closed tickets, and re-renders the dashboard. It never stops the Claude daemon while an agent is live. `--cleanup --dry-run` shows what it would do.
+- **Retry a failed ticket:** fix the cause, then relabel it `agent:ready`.
+
+### Dashboard
+
+`https://devbox.tail28d8ef.ts.net:9443`, on the tailnet only. One static page, re-rendered at the end of every tick and reloading itself every 60 seconds: what is running now, what needs you (failed tickets, held PRs, tickets with no agent, repos that need setup), and the last 50 runs. The tick writes it to `WWW_DIR` (`/srv/ship-factory/www`), outside the home directory because Caddy runs as its own user. Only the rendered page leaves the home directory.
+
+The devbox's Caddy already binds to the tailnet address with certificates from Tailscale, so the dashboard is one more site block, `factory/ship-factory.caddy`, on port 9443. The host's main Caddyfile belongs to another project and needs one line, `import /etc/caddy/conf.d/*.caddy`. `install.sh` prints these one-time sudo steps rather than running them:
+
+```bash
+sudo mkdir -p /srv/ship-factory/www && sudo chown $USER /srv/ship-factory/www && sudo chmod 755 /srv/ship-factory/www
+sudo mkdir -p /etc/caddy/conf.d && sudo cp ~/skills-factory/factory/ship-factory.caddy /etc/caddy/conf.d/
+# add to /etc/caddy/Caddyfile:  import /etc/caddy/conf.d/*.caddy
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+```
+
+Without the directory the tick logs that the page was not rendered and carries on.
 
 ## Skills
 

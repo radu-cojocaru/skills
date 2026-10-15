@@ -1,0 +1,9 @@
+# Ship factory dashboard, served on the tailnet only.
+# The main /etc/caddy/Caddyfile (owned by another project) must contain
+#   import /etc/caddy/conf.d/*.caddy
+# or this file is never read. install.sh prints the steps.
+devbox.tail28d8ef.ts.net:9443 {
+	bind 100.66.236.100 fd7a:115c:a1e0::4134:ec65
+	root * /srv/ship-factory/www
+	file_server
+}

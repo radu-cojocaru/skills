@@ -1,0 +1,26 @@
+{"ts":"2026-10-15T10:00:00Z","type":"launch","repo":"owner/app","issue":42,"title":"Fix login","url":"https://github.com/owner/app/issues/42","agent":"ship-42-fix-login","model":"sonnet"}
+{"ts":"2026-10-15T10:05:00Z","type":"claimed","repo":"owner/app","issue":42,"title":"Fix login","url":"https://github.com/owner/app/issues/42"}
+{"ts":"2026-10-15T10:20:00Z","type":"review","repo":"owner/app","issue":42,"title":"Fix login","url":"https://github.com/owner/app/issues/42"}
+{"ts":"2026-10-15T10:30:00Z","type":"pr_opened","repo":"owner/app","issue":42,"title":"Fix login","url":"https://github.com/owner/app/issues/42","pr":{"number":7,"url":"https://github.com/owner/app/pull/7"}}
+{"ts":"2026-10-15T11:00:00Z","type":"merged","repo":"owner/app","issue":42,"title":"Fix login","url":"https://github.com/owner/app/issues/42","pr":{"number":7,"url":"https://github.com/owner/app/pull/7"}}
+{"ts":"2026-10-15T10:00:00Z","type":"launch","repo":"owner/web","issue":42,"title":"Web thing","url":"https://github.com/owner/web/issues/42","agent":"ship-42-web-thing","model":"opus"}
+{"ts":"2026-10-15T10:05:00Z","type":"claimed","repo":"owner/web","issue":42,"title":"Web thing","url":"https://github.com/owner/web/issues/42"}
+{"ts":"2026-10-15T10:40:00Z","type":"resume","repo":"owner/web","issue":42,"title":"Web thing","url":"https://github.com/owner/web/issues/42","agent":"ship-42-web-thing","model":"opus"}
+{"ts":"2026-10-15T09:00:00Z","type":"launch","repo":"owner/app","issue":50,"title":"Flaky","url":"https://github.com/owner/app/issues/50","agent":"ship-50-flaky","model":"sonnet"}
+{"ts":"2026-10-15T09:05:00Z","type":"claimed","repo":"owner/app","issue":50,"title":"Flaky","url":"https://github.com/owner/app/issues/50"}
+{"ts":"2026-10-15T09:30:00Z","type":"failed","repo":"owner/app","issue":50,"title":"Flaky","url":"https://github.com/owner/app/issues/50","reason":"Rebase could not be resolved."}
+{"ts":"2026-10-15T11:30:00Z","type":"launch","repo":"owner/app","issue":50,"title":"Flaky","url":"https://github.com/owner/app/issues/50","agent":"ship-50-flaky","model":"opus"}
+{"ts":"2026-10-15T11:35:00Z","type":"claimed","repo":"owner/app","issue":50,"title":"Flaky","url":"https://github.com/owner/app/issues/50"}
+{"ts":"2026-10-15T12:00:00Z","type":"closed","repo":"owner/app","issue":50,"title":"Flaky","url":"https://github.com/owner/app/issues/50","reason":"not_planned"}
+{"ts":"2026-10-15T08:00:00Z","type":"claimed","repo":"owner/app","issue":60,"title":"Held one","url":"https://github.com/owner/app/issues/60"}
+{"ts":"2026-10-15T08:30:00Z","type":"pr_opened","repo":"owner/app","issue":60,"title":"Held one","url":"https://github.com/owner/app/issues/60","pr":{"number":9,"url":"https://github.com/owner/app/pull/9"}}
+{"ts":"2026-10-15T09:00:00Z","type":"held","repo":"owner/app","issue":60,"title":"Held one","url":"https://github.com/owner/app/issues/60","pr":{"number":9,"url":"https://github.com/owner/app/pull/9"},"reason":"Gate failed: no-automerge"}
+{"ts":"2026-10-15T08:00:00Z","type":"claimed","repo":"owner/app","issue":61,"title":"Orphaned","url":"https://github.com/owner/app/issues/61"}
+{"ts":"2026-10-15T09:00:00Z","type":"orphan","repo":"owner/app","issue":61,"title":"Orphaned","url":"https://github.com/owner/app/issues/61","reason":"in flight, no agent found"}
+{"ts":"2026-10-15T07:00:00Z","type":"claimed","repo":"owner/app","issue":62,"title":"Broken","url":"https://github.com/owner/app/issues/62"}
+{"ts":"2026-10-15T07:30:00Z","type":"failed","repo":"owner/app","issue":62,"title":"Broken","url":"https://github.com/owner/app/issues/62","reason":"Tests red after the one fix."}
+{"ts":"2026-10-15T09:10:00Z","type":"needs_setup","repo":"owner/new","reason":"run factory/setup-repo.sh owner/new"}
+{"ts":"2026-10-15T09:10:00Z","type":"needs_setup","repo":"owner/later","reason":"run factory/setup-repo.sh owner/later"}
+{"ts":"2026-10-15T09:20:00Z","type":"launch","repo":"owner/later","issue":1,"title":"First","url":"https://github.com/owner/later/issues/1","agent":"ship-1-first","model":"sonnet"}
+{"ts":"2026-10-15T09:15:00Z","type":"gate_closed","resets_at":"2026-10-15T14:00:00Z","reason":"session 72%, weekly 20%"}
+{"ts":"2026-10-15T09:25:00Z","type":"gate_opened"}

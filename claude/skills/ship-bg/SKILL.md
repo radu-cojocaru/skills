@@ -51,11 +51,17 @@ If `agent:ready` is already gone, stop.
   that — named after the issue, not from a stale local `main`. Do the work in
   that worktree. Do not create the branch in the current checkout.
 
-If you abort after claiming, put the label back:
+If you abort after claiming, mark the ticket failed and say why on the issue:
 
 ```
-gh issue edit <issue-id> --add-label "agent:ready" --remove-label "agent:working"
+gh issue comment <issue-id> --body "<why the run stopped>"
+gh issue edit <issue-id> --add-label "agent:failed" --remove-label "agent:working"
 ```
+
+Never put `agent:ready` back. The factory relaunches every `agent:ready`
+ticket, so a put-back would retry the same failing ticket every 5 minutes. A
+human relabels it `agent:ready` once the ticket or the cause is fixed. The
+stops above, before the claim, are different: they leave the ticket as it was.
 
 **Implement this ticket only.** Follow its acceptance criteria and testing
 decisions.
@@ -96,8 +102,9 @@ Resolve conflicts the way `/fix-pr` describes: read each conflicted file in
 full, keep both sides when they do not overlap, prefer this branch's intent
 when they do, and remove every conflict marker.
 
-If the rebase cannot be resolved, abort it and report. Do not open a PR on an
-unrebased branch.
+If the rebase cannot be resolved, abort it, mark the ticket `agent:failed`
+with a comment as step 1 says, and report. Do not open a PR on an unrebased
+branch.
 
 After a rebase, `git push --force-with-lease`. Never `git push --force`.
 
