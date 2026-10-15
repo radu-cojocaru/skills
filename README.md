@@ -119,6 +119,21 @@ Two warnings:
 
 Logs: `journalctl -t ship-tick`.
 
+### Dashboard
+
+`https://devbox.tail28d8ef.ts.net:9443`, on the tailnet only. One static page, re-rendered at the end of every tick and reloading itself every 60 seconds: what is running now, what needs you (failed tickets, held PRs, tickets with no agent, repos that need setup), and the last 50 runs. The tick writes it to `WWW_DIR` (`/srv/ship-factory/www`), outside the home directory because Caddy runs as its own user. Only the rendered page leaves the home directory.
+
+The devbox's Caddy already binds to the tailnet address with certificates from Tailscale, so the dashboard is one more site block, `factory/ship-factory.caddy`, on port 9443. The host's main Caddyfile belongs to another project and needs one line, `import /etc/caddy/conf.d/*.caddy`. `install.sh` prints these one-time sudo steps rather than running them:
+
+```bash
+sudo mkdir -p /srv/ship-factory/www && sudo chown $USER /srv/ship-factory/www && sudo chmod 755 /srv/ship-factory/www
+sudo mkdir -p /etc/caddy/conf.d && sudo cp ~/skills-factory/factory/ship-factory.caddy /etc/caddy/conf.d/
+# add to /etc/caddy/Caddyfile:  import /etc/caddy/conf.d/*.caddy
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+```
+
+Without the directory the tick logs that the page was not rendered and carries on.
+
 ## Skills
 
 - `audit-markdowns` — check project markdown against the code

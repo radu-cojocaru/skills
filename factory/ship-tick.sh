@@ -45,9 +45,24 @@ say() {
   echo "$*" >&2
 }
 
+# Every tick ends here, idle ones too, so the dashboard keeps its heartbeat.
 save_last_tick() {
   $DRY_RUN && return 0
   jq -nc --arg ts "$TICK_TS" --arg outcome "$1" '{ts: $ts, outcome: $outcome}' | write_atomic "$LAST_TICK"
+  render_dashboard
+}
+
+# A missing or unwritable WWW_DIR is logged and never fails the tick.
+render_dashboard() {
+  local err
+  if [[ ! -d "$WWW_DIR" || ! -w "$WWW_DIR" ]]; then
+    log "dashboard: $WWW_DIR is missing or not writable, page not rendered (see install.sh for the sudo steps)"
+    return 0
+  fi
+  if ! err=$(node "$FACTORY_DIR/render.mjs" "$STATE_DIR" "$WWW_DIR/index.html" 2>&1); then
+    log "dashboard: render failed: ${err//$'\n'/ | }"
+  fi
+  return 0
 }
 
 on_error() {
