@@ -19,15 +19,18 @@ Run all three. They are independent, so run them together.
 ```
 claude agents --json --all
 owner=$(gh api user -q .login)
-gh search issues --owner "$owner" --visibility private --archived=false --state open \
-  --label agent:working --label agent:review --label agent:done --label agent:failed \
-  --json repository,number,title,updatedAt,labels,url
+for label in agent:working agent:review agent:done agent:failed; do
+  gh search issues --owner "$owner" --visibility private --archived=false --state open \
+    --label "$label" --json repository,number,title,updatedAt,labels,url
+done
 gh search prs --owner "$owner" --visibility private --archived=false --state open \
   --json repository,number,title,url
 ```
 
-`gh search` ORs its `--label` flags (unlike `gh issue list`, where two flags
-mean AND), so one call returns every ticket on any of the four labels.
+`gh search` ANDs repeated `--label` flags, so one call with all four labels
+finds only tickets carrying every one of them, which is none. Search once per
+label and merge the results. A ticket can appear under two labels; count it
+once.
 
 Search returns neither the branch name nor CI or merge state (`gh search prs
 --json` has no `headRefName`). Look those up per PR, for the few open ones

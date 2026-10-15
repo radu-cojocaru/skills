@@ -136,9 +136,15 @@ SESSIONS="{}"
 record_step() {
   local snapshot issues prs lookups live repos repo key n full look pr_json
   if [[ -f "$SNAPSHOT" ]]; then snapshot=$(cat "$SNAPSHOT"); else snapshot='{}'; fi
-  issues=$(gh search issues --owner "$OWNER_LOGIN" --visibility private --archived=false --state open \
-             --label agent:working --label agent:review --label agent:done --label agent:failed \
-             --json repository,number,title,labels,url --limit 200)
+  # One search per label: gh search ANDs repeated --label flags.
+  local label found
+  issues='[]'
+  for label in agent:working agent:review agent:done agent:failed; do
+    found=$(gh search issues --owner "$OWNER_LOGIN" --visibility private --archived=false --state open \
+              --label "$label" --json repository,number,title,labels,url --limit 200)
+    issues=$(jq -c --argjson f "$found" \
+      '. + $f | unique_by("\(.repository.nameWithOwner)#\(.number)")' <<<"$issues")
+  done
   IN_FLIGHT_COUNT=$(jq 'length' <<<"$issues")
 
   # Open PRs per repo that has an in-flight ticket, asked of the repo
