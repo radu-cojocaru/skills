@@ -6,9 +6,10 @@
 #
 #   ship-tick.sh            the tick
 #   ship-tick.sh --dry-run  run every check, launch nothing, record nothing
+#   ship-tick.sh --cleanup  the daily mode: worktrees, old events, closed records
 #
-# Steps are functions called in order from main(), so later pieces (record,
-# stale runs, cleanup, dashboard) slot in between them.
+# Steps are functions called in order from main(): record, stale runs, find
+# work, usage gate, launch, last tick + dashboard.
 
 source "$(dirname "$0")/lib.sh"
 require_tools claude gh node jq flock curl
