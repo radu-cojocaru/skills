@@ -712,21 +712,50 @@ cleanup_step() {
     fi
     todo+=("$repo")
   done
+  # The daemon. Deleting a job record sticks only while the daemon is down
+  # (it rewrites records it holds), and stopping it ends every background
+  # agent on the machine. So decide once, before any repo deletes anything:
+  # dry-run every repo, and stop the daemon when some repo will remove a job
+  # record and no agent anywhere is live, apart from the ones the dry runs
+  # found dead (a closed ticket). Every repo then runs with --keep-daemon.
+  local repo_out dry_outs=() removing='[]' live
+  for repo in "${todo[@]}"; do
+    repo_out=$(cd "$REPOS_DIR/$repo" && node "$script" --json --keep-daemon 2>/dev/null) || repo_out='{}'
+    dry_outs+=("$repo_out")
+    removing=$(jq -c --argjson acc "$removing" \
+      '$acc + [(.removed // [])[] | select(.kind == "job") | .item | sub("^~/.claude/jobs/"; "")]' <<<"$repo_out" 2>/dev/null || echo "$removing")
+  done
+  if (( ${#todo[@]} > 0 )) && [[ "$removing" != '[]' ]] && ! $skipped_live; then
+    if ! live=$(claude agents --json --all 2>/dev/null | jq -c --argjson gone "$removing" \
+        '[.[] | select(.kind == "background" and (.state == "working" or .state == "blocked")) | .id
+          | select(. as $id | $gone | index($id) | not)]'); then
+      say "cleanup: daemon: left up, \`claude agents\` did not answer"
+    elif [[ "$live" != '[]' ]]; then
+      say "cleanup: daemon: left up, live agent(s) $(jq -r 'join(", ")' <<<"$live")"
+    elif $DRY_RUN; then
+      say "cleanup: daemon: would stop it first, so removed job records stay removed"
+    else
+      claude daemon stop --any >/dev/null 2>&1 || true
+      say "cleanup: daemon: stopped, so removed job records stay removed"
+    fi
+  elif $skipped_live; then
+    say "cleanup: daemon: left up, a repo was skipped for a live session"
+  fi
+
   local i n=${#todo[@]} flags out
   for ((i = 0; i < n; i++)); do
     repo=${todo[$i]}; clone="$REPOS_DIR/$repo"
-    flags=(--json)
-    $DRY_RUN || flags+=(--apply)
-    # The daemon stop happens at most once, in the last repo, and never
-    # while another repo was skipped for a live session.
-    if (( i < n - 1 )) || $skipped_live; then flags+=(--keep-daemon); fi
-    if out=$(cd "$clone" && node "$script" "${flags[@]}" 2>&1); then
-      say "cleanup: $OWNER_LOGIN/$repo: $(jq -r '
-        (if .applied then "removed" else "would remove" end) as $v
-        | ([.removed[] | "\($v) \(.item)"] + [.skipped[] | "kept \(.item): \(.reason)"]) | if length == 0 then "nothing to clean up" else join("; ") end' <<<"$out" 2>/dev/null || echo "$out")"
+    if $DRY_RUN; then
+      out=${dry_outs[$i]}
     else
-      log "cleanup: $OWNER_LOGIN/$repo: ship-cleanup.mjs failed: ${out//$'\n'/ | }"
+      out=$(cd "$clone" && node "$script" --json --apply --keep-daemon 2>&1) || {
+        log "cleanup: $OWNER_LOGIN/$repo: ship-cleanup.mjs failed: ${out//$'\n'/ | }"
+        continue
+      }
     fi
+    say "cleanup: $OWNER_LOGIN/$repo: $(jq -r '
+      (if .applied then "removed" else "would remove" end) as $v
+      | ([.removed[] | "\($v) \(.item)"] + [.skipped[] | "kept \(.item): \(.reason)"]) | if length == 0 then "nothing to clean up" else join("; ") end' <<<"$out" 2>/dev/null || echo "$out")"
   done
 
   # 2. Events older than EVENTS_KEEP_DAYS days.

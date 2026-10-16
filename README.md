@@ -134,7 +134,7 @@ Idle ticks, with nothing ready and nothing changed, exit in about a second witho
 
 - **Pause:** comment out the two crontab lines. Running agents are not affected.
 - **Logs:** `journalctl -t ship-tick`.
-- **Cleanup:** the daily crontab line runs `ship-tick.sh --cleanup`. It waits for the tick's lock, runs `ship-cleanup.mjs --apply` in every set-up repo with nothing in flight and no live session, drops events older than 90 days and the records of closed tickets, and re-renders the dashboard. It never stops the Claude daemon while an agent is live. `--cleanup --dry-run` shows what it would do.
+- **Cleanup:** the daily crontab line runs `ship-tick.sh --cleanup`. It waits for the tick's lock, runs `ship-cleanup.mjs --apply` in every set-up repo with nothing in flight and no live session, drops events older than 90 days and the records of closed tickets, and re-renders the dashboard. Before any repo deletes anything, it stops the Claude daemon once, but only when some repo will remove a job record and no agent anywhere is live. Job records deleted while the daemon runs come back, and stopping it ends every background agent. `--cleanup --dry-run` shows what it would do.
 - **Retry a failed ticket:** fix the cause, then relabel it `agent:ready`.
 
 ### Dashboard
