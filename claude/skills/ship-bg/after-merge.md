@@ -39,8 +39,9 @@ failed, and hand every step to a human.
 - **No P1 finding marked "Rejected".**
 - **CI green on the commit that lands.** Rebase onto `origin/main` right
   before merging; if that moved the branch, push and watch CI again. "No
-  checks reported" passes only for a docs- or `.claude/`-only diff. Pending
-  after 30 minutes fails.
+  checks reported" twice, a minute apart, passes: which paths run CI is the
+  repo's decision, made in its workflow triggers, and branch protection still
+  blocks the merge if it requires a check. Pending after 30 minutes fails.
 
 **Pre-merge backup.** A migration runs the moment the deploy boots, so back up
 first: the whole database where Shipping says to, otherwise the tables a
