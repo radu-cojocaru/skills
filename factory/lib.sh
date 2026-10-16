@@ -152,12 +152,22 @@ ticket_session() {
     | ((map(select($pref != "" and .id == $pref)) | first) // (sort_by(.startedAt) | last) // empty)'
 }
 
-# transcript_path <session json>: ~/.claude/projects/<cwd with / -> ->/<sessionId>.jsonl
+# transcript_path <session json>: the session's transcript,
+# ~/.claude/projects/<project folder>/<sessionId>.jsonl, or nothing.
+# Found by session id, not built from .cwd: /ship-bg moves into a worktree,
+# so the transcript lands in the worktree's project folder while .cwd still
+# names the clone. Claude Code also turns every non-alphanumeric character
+# into "-" in the folder name, not only "/". The newest match wins.
 transcript_path() {
-  local cwd sid
-  cwd=$(jq -r '.cwd' <<<"$1")
-  sid=$(jq -r '.sessionId' <<<"$1")
-  echo "$HOME/.claude/projects/${cwd//\//-}/$sid.jsonl"
+  local sid path best=""
+  sid=$(jq -r '.sessionId // empty' <<<"$1")
+  [[ -z "$sid" ]] && return 0
+  for path in "$HOME"/.claude/projects/*/"$sid".jsonl; do
+    [[ -f "$path" ]] || continue
+    if [[ -z "$best" || "$path" -nt "$best" ]]; then best=$path; fi
+  done
+  [[ -n "$best" ]] && echo "$best"
+  return 0
 }
 
 # session_is_live <session json>: state working or blocked AND the transcript
