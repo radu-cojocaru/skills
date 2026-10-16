@@ -87,7 +87,7 @@ Then, once per repo:
 ~/skills-factory/factory/setup-repo.sh <owner/repo>
 ```
 
-It clones the repo to `$REPOS_DIR/<repo>` if needed, creates the labels the ship skills need, warns when the repo's `CLAUDE.md` has no **Shipping** or **Ship groups** section, and checks the clone is trusted by Claude Code. A fresh clone is not; the script prints the `claude` command to run once to accept the trust prompt. It writes `~/.claude.json` never. The tick only launches in repos the script has marked set up.
+It clones the repo to `$REPOS_DIR/<repo>` if needed, creates the labels the ship skills need, notes when the repo's `CLAUDE.md` has no **Shipping** section, and checks the clone is trusted by Claude Code. A fresh clone is not; the script prints the `claude` command to run once to accept the trust prompt. It writes `~/.claude.json` never. The tick only launches in repos the script has marked set up.
 
 `factory/ship-tick.sh --dry-run` runs every check the tick makes, prints per repo what it would launch and the usage gate's state, and launches and records nothing.
 
@@ -169,7 +169,10 @@ Without the directory the tick logs that the page was not rendered and carries o
 
 ## Claude Code skills
 
-All but `ship-fleet` are user-invoked only (`disable-model-invocation`). They read the project's `CLAUDE.md` for its **Shipping** section (backups, live and healthy checks after a merge) and **Ship groups** section (which directories may ship in parallel).
+All but `ship-fleet` are user-invoked only (`disable-model-invocation`). They read two optional sections of the project's `CLAUDE.md`:
+
+- **Shipping:** backups, and live and healthy checks after a merge. Without it, tickets still ship and merge. Their after-merge steps go to a human, and deploys are reported unverified.
+- **Ship groups:** which directories may ship in parallel. Only `ship-fleet` reads it. Without it, each top-level app directory is its own group. The factory runs one ticket per repo at a time and never needs it.
 
 - `ship` — launch a background agent that ships one ready issue
 - `ship-bg` — the background loop: implement, review, fix, open the PR, merge when the gates hold, run the after-merge steps
