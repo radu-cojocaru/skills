@@ -377,6 +377,25 @@ close_launch() {
     | write_atomic "$LAUNCHES"
 }
 
+# end_closed_run <owner/repo#n>: a launched ticket closed without the record
+# step seeing it leave the in-flight search (it closed between two ticks, or
+# while no tick ran). Append the merged or closed event that ends its run on
+# the dashboard, unless the run already has an ending.
+end_closed_run() {
+  local key=$1 full=${1%#*} n=${1#*#} last look json
+  last=$(json_file_or "$STATE_DIR/events.jsonl" '' \
+    | jq -rs --arg r "$full" --argjson n "$n" '[.[] | select(.repo == $r and .issue == $n)] | last | .type // ""')
+  case "$last" in merged|closed|held|failed) return 0 ;; esac
+  look=$(gh issue view "$n" --repo "$full" --json state,stateReason,title,url,closedByPullRequestsReferences 2>/dev/null) || return 0
+  json=$(jq -c --arg ts "$TICK_TS" --arg r "$full" --argjson n "$n" '
+    (.closedByPullRequestsReferences // [] | map(select(.merged != false)) | first) as $pr
+    | {ts: $ts, repo: $r, issue: $n, title, url}
+      + if $pr then {pr: {number: $pr.number, url: $pr.url}, type: "merged"}
+        else {type: "closed", reason: ((.stateReason // "closed") | ascii_downcase)} end' <<<"$look")
+  say "$key: event $(jq -r .type <<<"$json") (closed between ticks)"
+  append_event "$json"
+}
+
 # Step 2b, every tick: resume runs that stopped, fail those that stopped
 # twice, flag tickets with no agent, and fail launches /ship-bg declined.
 stale_step() {
@@ -462,6 +481,7 @@ $([[ -n "$s" ]] && logs_tail "$s" || echo "(session $sid not found)")
         close_launch "$key" "declined"
         ;;
       close)
+        [[ "$reason" == "ticket closed" ]] && end_closed_run "$key"
         close_launch "$key" "$reason"
         ;;
     esac
