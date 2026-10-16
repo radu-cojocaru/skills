@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # setup-repo.sh <owner/repo>: prepare one repo for the factory. Idempotent.
-# Clones it, creates missing labels, warns on a CLAUDE.md without the
-# Shipping sections, checks the clone is trusted, and writes the marker
+# Clones it, creates missing labels, notes a CLAUDE.md without a Shipping
+# section, checks the clone is trusted, and writes the marker
 # state/setup/<repo> only when everything the tick needs is in place.
 # Never writes ~/.claude.json.
 
@@ -42,15 +42,21 @@ for label in "${LABELS[@]}"; do
 done
 echo
 
-# 3. CLAUDE.md sections (warn only).
+# 3. CLAUDE.md Shipping section (a note; never blocks setup). Ship groups is
+#    not checked: only /ship-fleet reads it, and the factory runs one ticket
+#    per repo at a time.
 claude_md="$CLONE/CLAUDE.md"
-for section in "Shipping" "Ship groups"; do
-  if [[ -f "$claude_md" ]] && grep -qE "^#+ +$section\b" "$claude_md"; then
-    echo "CLAUDE.md: has '## $section'"
-  else
-    echo "CLAUDE.md: warning, no '## $section' section (the ship skills read it)"
-  fi
-done
+if [[ -f "$claude_md" ]] && grep -qE "^#+ +Shipping\b" "$claude_md"; then
+  echo "CLAUDE.md: has '## Shipping'"
+else
+  cat <<'EOF'
+CLAUDE.md: no '## Shipping' section. Tickets still ship and merge. A ticket's
+           after-merge steps (migrations, backfills, config) go to a human in
+           a hand-off issue, and deploys are reported unverified. Add the
+           section when the agent should back up, run those steps and check
+           the deploy itself.
+EOF
+fi
 
 # 4. Trust.
 if repo_is_trusted "$CLONE"; then
