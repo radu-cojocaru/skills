@@ -245,7 +245,9 @@ Two normal outcomes look like failures and are not:
   register the runs, and this watch starts moments after the PR opens, with
   nothing in between to absorb that wait. Give it about a minute and run the
   command again.
-- **"no checks reported" a second time.** Then no workflow matched this branch at all. Move on.
+- **"no checks reported" a second time.** Then no workflow matched this branch
+  at all. The repo chose not to run CI on these paths, so the CI gate holds.
+  Move on.
 
 Give it up to 30 minutes. A slow pipeline delays the merge; it never
 excuses one.
