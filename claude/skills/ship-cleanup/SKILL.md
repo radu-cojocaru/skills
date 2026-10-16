@@ -105,6 +105,19 @@ A job record is removed when its id is absent from `claude agents --json`
 to be live but its ticket is closed on GitHub. If that command does not answer,
 the script leaves every job record alone, keeps the daemon up, and says so.
 
+- **Only this repo's job records are in scope.** `~/.claude/jobs/` is shared
+  by every repo on the machine. The script touches a record only when the
+  agent was launched from this repo, by the `cwd` in its `state.json`. Its
+  ticket check asks `gh` about this repo, so it can't judge another repo's
+  ticket numbers. Run it from each repo to clean that repo's records.
+- **A live agent anywhere keeps the daemon up.** Stopping the daemon ends
+  every background agent on the machine, so a `working` or `blocked` agent in
+  another repo counts as live here too.
+- **A resumed run keeps its predecessor's record.** A resume starts a new
+  session under the same name, and it can keep using the stopped session's
+  `tmp/`. While an agent with that name is live in this repo, the old record
+  stays.
+
 ## The memory line
 
 Every run ends with three short lines — short so they survive being read on a
