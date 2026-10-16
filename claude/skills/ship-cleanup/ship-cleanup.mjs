@@ -121,17 +121,35 @@ function looksMachineMade(path) {
   return /\d/.test(basename(path));
 }
 
-/** Background-agent id → state, from the daemon. A record is a leftover once
- *  its agent is gone, `done`, or `stopped` — stopped means the user already
- *  looked and killed it. `working` and `blocked` are checked against GitHub
- *  before being kept; see ticketIsClosed(). */
+/** Background-agent id → {state, name, cwd}, from the daemon. A record is a
+ *  leftover once its agent is gone, `done`, or `stopped` — stopped means the
+ *  user already looked and killed it. `working` and `blocked` are checked
+ *  against GitHub before being kept; see ticketIsClosed(). */
 function agentStates() {
   const raw = run("claude", ["agents", "--json", "--all"], { allowFail: true });
   if (!raw) return null;
   try {
     const map = new Map();
-    for (const a of JSON.parse(raw)) if (a.id) map.set(a.id, a.state ?? a.status ?? "unknown");
+    for (const a of JSON.parse(raw)) {
+      if (a.id) map.set(a.id, { state: a.state ?? a.status ?? "unknown", name: a.name ?? null, cwd: a.cwd ?? null });
+    }
     return map;
+  } catch {
+    return null;
+  }
+}
+
+const LIVE_STATES = new Set(["working", "blocked"]);
+
+/** True when <path> is this repo's root or inside it. */
+function inRepo(path) {
+  return typeof path === "string" && (path === repoRoot || path.startsWith(repoRoot + "/"));
+}
+
+/** state.json of a job record, or null. */
+function readRecord(dir) {
+  try {
+    return JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
   } catch {
     return null;
   }
@@ -229,12 +247,8 @@ function ticketNumberIn(intent) {
  * ticket. Anything we cannot answer counts as live, and is kept.
  */
 function ticketIsClosed(dir) {
-  let record;
-  try {
-    record = JSON.parse(readFileSync(join(dir, "state.json"), "utf8"));
-  } catch {
-    return false;
-  }
+  const record = readRecord(dir);
+  if (!record) return false;
   const ticket = ticketNumberIn(record.intent ?? "");
   if (ticket !== null) {
     const issue = ghJson(["issue", "view", String(ticket), "--json", "state"]);
@@ -289,12 +303,41 @@ if (states === null) {
     live: true,
   });
 } else if (existsSync(JOBS_DIR)) {
+  // ~/.claude/jobs is machine-wide. Touch only the records of agents launched
+  // from this repo; every other repo's records are its own cleanup's to judge.
+  // ticketIsClosed() asks `gh` about this repo, so it would read another
+  // repo's ticket number against the wrong issue.
+  //
+  // Stopping the daemon ends every background agent on the machine, so a live
+  // agent anywhere keeps it up, whichever repo it runs in.
+  for (const [id, agent] of states) {
+    const record = existsSync(join(JOBS_DIR, id)) ? readRecord(join(JOBS_DIR, id)) : null;
+    const cwd = record?.cwd ?? agent.cwd;
+    if (!LIVE_STATES.has(agent.state)) continue;
+    if (!inRepo(cwd)) {
+      skipped.push({ item: `agent ${id}`, reason: `${agent.state} in ${cwd ?? "another directory"} — not this repo's`, live: true });
+    } else if (!record) {
+      skipped.push({ item: `agent ${id}`, reason: `${agent.state}, no job record`, live: true });
+    }
+  }
+  // Names of this repo's live agents. A factory resume starts a new session
+  // under the same name, and it can keep writing to its predecessor's tmp/.
+  const liveNames = new Set(
+    [...states.values()].filter((a) => LIVE_STATES.has(a.state) && inRepo(a.cwd) && a.name).map((a) => a.name),
+  );
   for (const entry of readdirSync(JOBS_DIR)) {
     if (entry === "pins.json") continue;
     const dir = join(JOBS_DIR, entry);
-    const state = states.get(entry);
+    const agent = states.get(entry);
+    const state = agent?.state;
+    const record = readRecord(dir);
+    const cwd = record?.cwd ?? agent?.cwd;
+    if (!inRepo(cwd)) continue;
     const item = `~/.claude/jobs/${entry}`;
-    if (state === undefined || state === "done" || state === "stopped") {
+    const name = record?.name ?? agent?.name;
+    if ((state === undefined || state === "done" || state === "stopped") && name && liveNames.has(name)) {
+      skipped.push({ item, reason: `${state ?? "gone"}, but a live agent named ${name} may still use its files` });
+    } else if (state === undefined || state === "done" || state === "stopped") {
       actions.push({ kind: "job", item, path: dir });
     } else if (ticketIsClosed(dir)) {
       // Says `working` or `blocked`, but its ticket is closed on GitHub. The
