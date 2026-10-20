@@ -1,0 +1,15 @@
+{
+  "name": "raducojocaru",
+  "owner": {
+    "name": "Radu Cojocaru",
+    "url": "http://raducojocaru.com"
+  },
+  "description": "Claude Code mods by Radu Cojocaru, from the skills repository",
+  "plugins": [
+    {
+      "name": "skill-view",
+      "source": "./claude-mods/skill-view",
+      "description": "A pane listing the skills Claude invoked on its own, updated every turn"
+    }
+  ]
+}
