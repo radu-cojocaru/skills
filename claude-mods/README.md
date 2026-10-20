@@ -8,16 +8,15 @@ Mods for Claude Code: plugins of function hooks that change its interface. Each 
 
 ## Install
 
-This folder is a plugin marketplace. From a terminal session:
+The repository root holds the plugin marketplace. From a terminal session:
 
 ```
-/plugin marketplace add /path/to/claude-mods
-/plugin install skill-view --marketplace claude-mods
+/plugin install skill-view --marketplace radu-cojocaru/skills
 ```
 
-To install from GitHub, the marketplace file has to sit at the repository root, so publish this folder as its own repository (or move `.claude-plugin/` up) and use `/plugin install skill-view --marketplace <owner>/<repo>`.
+From a shell: `claude plugin install skill-view --marketplace radu-cojocaru/skills`.
 
-To try a mod for one session without installing: `claude --plugin-dir /path/to/claude-mods/skill-view`.
+To try a mod for one session without installing: `claude --plugin-dir /path/to/skills/claude-mods/skill-view`.
 
 ## skill-view
 

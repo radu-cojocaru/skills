@@ -5,7 +5,7 @@
   "plugins": [
     {
       "name": "skill-view",
-      "source": "./skill-view",
+      "source": "./claude-mods/skill-view",
       "description": "A pane listing the skills Claude invoked on its own, updated every turn"
     }
   ]
