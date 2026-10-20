@@ -1,6 +1,9 @@
 {
-  "name": "claude-mods",
-  "owner": { "name": "Radu Cojocaru" },
+  "name": "raducojocaru",
+  "owner": {
+    "name": "Radu Cojocaru",
+    "url": "http://raducojocaru.com"
+  },
   "description": "Mods for Claude Code",
   "plugins": [
     {
