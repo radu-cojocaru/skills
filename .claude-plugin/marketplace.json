@@ -4,7 +4,7 @@
     "name": "Radu Cojocaru",
     "url": "http://raducojocaru.com"
   },
-  "description": "Mods for Claude Code",
+  "description": "Claude Code mods by Radu Cojocaru, from the skills repository",
   "plugins": [
     {
       "name": "skill-view",
