@@ -1,0 +1,7 @@
+{
+  "name": "skill-view",
+  "version": "0.1.0",
+  "author": { "name": "Radu Cojocaru" },
+  "description": "A pane listing the skills Claude invoked on its own, updated every turn",
+  "types": "./types/index.d.ts"
+}
