@@ -128,7 +128,7 @@ Every 5 minutes the tick takes a lock, then:
 5. **Launches** the oldest ready ticket in each free repo from its clone, with the same flags `/ship` uses, on the model the `model:*` label names or `DEFAULT_MODEL`.
 6. **Renders the dashboard** and writes the last-tick heartbeat.
 
-Idle ticks, with nothing ready and nothing changed, exit in about a second without starting Claude. Pushover alerts go out once each for a failed ticket, a held PR, a ticket with no agent, a repo that needs setup, and a tick that fails. A ticket relabelled `agent:ready` and run again can alert once more.
+Idle ticks, with nothing ready and nothing changed, exit in about a second without starting Claude. Pushover alerts go out once each for a failed ticket, a held PR, a ticket with no agent, a repo that needs setup, and a run of failing ticks (until one gets through, as in a GitHub outage). A ticket relabelled `agent:ready` and run again can alert once more.
 
 ### Day to day
 

@@ -29,6 +29,7 @@ LAUNCHES="$STATE_DIR/launches.json"
 LAST_TICK="$STATE_DIR/last-tick.json"
 GATE_FILE="$STATE_DIR/gate.json"
 GATE_CLOSED_UNTIL="$STATE_DIR/gate-closed-until"
+TICK_ERROR="$STATE_DIR/tick-error"   # the TICK_TS of the last tick that failed
 TICK_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 LAUNCH_GRACE_SECS=600
 
@@ -52,6 +53,11 @@ say() {
 save_last_tick() {
   $DRY_RUN && return 0
   jq -nc --arg ts "$TICK_TS" --arg outcome "$1" '{ts: $ts, outcome: $outcome}' | write_atomic "$LAST_TICK"
+  # A tick that gets through ends the outage, so the next failure alerts again.
+  if [[ "$1" != error* && -e "$STATE_DIR/alerted/error:tick" ]]; then
+    rm -f "$STATE_DIR/alerted/error:tick"
+    log "ticks get through again"
+  fi
   render_dashboard
 }
 
@@ -73,14 +79,16 @@ on_error() {
   local msg="error: '$cmd' failed (exit $code)"
   # A failure inside a command substitution fires this trap once per nesting
   # level; the innermost one has already reported, so the others just exit.
-  if [[ -e "$STATE_DIR/alerted/error:$TICK_TS" ]]; then
+  if [[ "$(cat "$TICK_ERROR" 2>/dev/null)" == "$TICK_TS" ]]; then
     exit 1
   fi
   log "$msg"
   if ! $DRY_RUN; then
+    echo "$TICK_TS" >"$TICK_ERROR" || true
     save_last_tick "$msg" || true
     event error "reason=$msg" || true
-    alert "error:$TICK_TS" "ship-tick failed" "$msg" || true
+    # One alert per outage: failed ticks keep the key until one gets through.
+    alert "error:tick" "ship-tick failed" "$msg" || true
   fi
   exit 1
 }
@@ -503,7 +511,7 @@ do_resume() {
   local id sid state name out nid launch
   id=$(jq -r .id <<<"$s"); sid=$(jq -r .sessionId <<<"$s"); state=$(jq -r .state <<<"$s")
   name=$(jq -r '.name // empty' <<<"$s"); [[ "$name" == ship-* ]] || name="ship-$n"
-  [[ "$state" == "working" ]] && claude stop "$id" >/dev/null 2>&1
+  [[ "$state" == "working" ]] && { claude stop "$id" >/dev/null 2>&1 || true; }
   # --name, or the copy is listed under its prompt once it stops.
   if ! out=$(cd "$REPOS_DIR/${full#*/}" && claude --bg --resume "$sid" --name "$name" "continue" 2>&1); then
     log "error: resume of $key ($sid) refused: ${out//$'\n'/ | }"
@@ -617,7 +625,7 @@ launch_one() {
     return 0
   fi
   id=$(awk -F' · ' '/^backgrounded · /{print $2; exit}' <<<"$out")
-  [[ -z "$id" ]] && id=$(session_id_for_name "$name" "$clone")
+  [[ -z "$id" ]] && id=$(session_id_for_name "$name" "$clone" || true)
   if [[ -z "$id" ]]; then
     log "error: launch of $full#$issue printed no session id: ${out//$'\n'/ | }"
     event error "repo=$full" "issue=$issue" "reason=launch printed no session id: ${out:0:400}"
@@ -851,7 +859,9 @@ main() {
   launch_candidates
   if (( FAILED_REPOS > 0 )); then
     save_last_tick "error: $FAILED_REPOS launch(es) failed, $LAUNCHED launched"
-    return 1
+    # exit, not return: a failing main would re-enter the ERR trap, which
+    # would overwrite last-tick.json and alert a second time.
+    exit 1
   fi
   if $DRY_RUN; then
     say "dry run: nothing launched, nothing recorded"
@@ -862,6 +872,6 @@ main() {
   fi
 }
 
-# `main || …`: a non-zero return (a failed launch) must not re-enter the ERR
-# trap, which would overwrite last-tick.json and alert a second time.
-main || exit 1
+# Not `main || …`: that turns off errexit and the ERR trap for the whole tick,
+# so a failed gh call runs on with empty JSON instead of stopping it.
+main
