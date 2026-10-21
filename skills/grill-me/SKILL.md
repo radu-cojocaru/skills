@@ -18,10 +18,12 @@ Format a round like so:
 
 ---
 
-❓ **Q2** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices choices labelled A, B, C, etc.>
+❓ **Q2** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices labelled A, B, C, etc.>
 
 ➡️ <your recommended answer>
 ```
+
+If you have the `AskUserQuestion` tool, ask the round with it instead of the text format above. Each call takes up to 4 questions, so split a larger frontier across consecutive calls in the same round. Put your recommended choice first and append "(Recommended)" to its label. The tool adds an "Other" choice for free-text answers, so a question with no natural choices still fits: offer your recommendation and a plausible alternative. If the question needs more context than its text and option descriptions can hold, give that context in your message before the call.
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
