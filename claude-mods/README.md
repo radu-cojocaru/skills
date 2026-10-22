@@ -20,6 +20,8 @@ To try a mod for one session without installing: `claude --plugin-dir /path/to/s
 
 ## skill-view
 
+![The skill-view pane below a running Claude Code session, listing grill-me under turn 5 and draft under turn 3](images/skill-view.png)
+
 Opens a pane when the session starts; `/skill-view` reopens it. Each row is a skill Claude called through its Skill tool, under the turn it happened in: `…` running, `✓` done, `✗` failed or denied. Calls from subagents are marked. Skills you type yourself as `/name` are not listed, since you invoked those.
 
 Requires a Claude Code build with mods (the `claude-code` hooks API). Check or test it with `claude plugin validate skill-view` and `claude plugin test skill-view`.
