@@ -1,6 +1,6 @@
 ---
 name: ship-bg
-description: The background half of /ship. Implements a ready issue on a branch, gets the branch reviewed by a fresh agent, applies the findings, opens the PR, merges it once CI is green and the gates hold, then runs the after-merge steps the ticket gives the agent and hands the rest to a human.
+description: The background half of /ship-ticket. Implements a ready issue on a branch, gets the branch reviewed by a fresh agent, applies the findings, opens the PR, merges it once CI is green and the gates hold, then runs the after-merge steps the ticket gives the agent and hands the rest to a human.
 disable-model-invocation: true
 ---
 

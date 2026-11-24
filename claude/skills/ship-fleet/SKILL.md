@@ -82,7 +82,7 @@ ticket, which tickets were skipped as unclear — and stop.
 
 ## 5. Launch one `/ship-bg` per picked ticket
 
-For each picked ticket, build its agent name exactly as `/ship` does:
+For each picked ticket, build its agent name exactly as `/ship-ticket` does:
 
 ```
 slug=$(gh issue view <issue-id> --json title -q .title \
@@ -102,7 +102,7 @@ claude --bg --name "$name" --model sonnet \
   "/ship-bg <issue-id>"
 ```
 
-Same flags as `/ship`, same reasons: `--bg` alone (never `--bg -p`),
+Same flags as `/ship-ticket`, same reasons: `--bg` alone (never `--bg -p`),
 `--permission-mode bypassPermissions` or it blocks on the first edit,
 `--model` passed explicitly so it never silently inherits this session's
 model, `--name`/`--remote-control` matching so the run is reachable and

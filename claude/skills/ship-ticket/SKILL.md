@@ -1,5 +1,5 @@
 ---
-name: ship
+name: ship-ticket
 description: "Ship a ready issue: launch a background agent that implements it, gets the branch reviewed by a fresh agent, applies the findings, then opens the PR. Optionally takes a model alias to run on."
 argument-hint: <issue-id> [sonnet|opus|fable]
 disable-model-invocation: true
@@ -16,15 +16,15 @@ run inside a conversation the user is waiting on.
 
 ## Read the arguments
 
-`/ship <issue-id> [model]` — the model is optional and defaults to `sonnet`.
+`/ship-ticket <issue-id> [model]` — the model is optional and defaults to `sonnet`.
 
 Both orders work, because the two are never confusable: the **all-digits**
 token is the issue id, the other is the model.
 
 ```
-/ship 480              → issue 480 on sonnet
-/ship 480 opus         → issue 480 on opus
-/ship fable 480        → issue 480 on fable
+/ship-ticket 480        → issue 480 on sonnet
+/ship-ticket 480 opus   → issue 480 on opus
+/ship-ticket fable 480  → issue 480 on fable
 ```
 
 The model must be one of `sonnet`, `opus` or `fable` — the CLI's own
@@ -94,7 +94,7 @@ Every flag there is load-bearing:
 - `--model <model>`, **always passed, even for the default**. The session model
   wins over the skill's frontmatter, so without the flag the whole run
   inherits whatever model launched _this_ conversation — which is how a
-  `/ship` typed from an Opus session used to become an Opus run by accident.
+  `/ship-ticket` typed from an Opus session used to become an Opus run by accident.
   Passing it explicitly is what makes the default a decision rather than a
   side effect.
 - `--name "$name"`, so `claude agents` and `/ship-status` show which ticket the

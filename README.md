@@ -24,10 +24,10 @@ npx skills update -g -y
 
 How a piece of work goes from an idea to `main`. Every step is a GitHub issue changing labels: `draft` → `agent:ready` → `agent:working` → `agent:done` → closed by the merged PR. A run that aborts after claiming its ticket leaves it on `agent:failed` with a comment saying why; relabel it `agent:ready` to retry. `/implement` uses `agent:implemented` instead of `agent:done`, as before.
 
-Two optional labels pick the model: `model:opus` and `model:fable`. The factory reads them when it launches a ticket; without one it uses its default model. `/ship` ignores them and takes the model as an argument.
+Two optional labels pick the model: `model:opus` and `model:fable`. The factory reads them when it launches a ticket; without one it uses its default model. `/ship-ticket` ignores them and takes the model as an argument.
 
 ```
-/draft  →  /refine-fast  (or /refine)  →  /ship  (or /ship-fleet)
+/draft  →  /refine-fast  (or /refine)  →  /ship-ticket  (or /ship-fleet)
  draft        agent:ready                  merged, deployed, checked
 ```
 
@@ -55,13 +55,13 @@ Either way the plan ends up in the issue body, including an `## After merge` sec
 
 ### 3. Ship — implement, review, merge
 
-`/ship <id> [sonnet|opus|fable]` launches a background agent and returns straight away. Sonnet is the default. Use `opus` for anything spanning several apps, touching money, or hard to get right, and `fable` for the hardest ones. The agent implements on its own worktree, gets a fresh Opus review, fixes the findings, opens the PR, merges once CI is green and the gates hold, then runs the `agent` after-merge steps. Any `human` steps land in a hand-off issue.
+`/ship-ticket <id> [sonnet|opus|fable]` launches a background agent and returns straight away. Sonnet is the default. Use `opus` for anything spanning several apps, touching money, or hard to get right, and `fable` for the hardest ones. The agent implements on its own worktree, gets a fresh Opus review, fixes the findings, opens the PR, merges once CI is green and the gates hold, then runs the `agent` after-merge steps. Any `human` steps land in a hand-off issue.
 
 `/ship-fleet` does the same for every `agent:ready` issue at once, one per non-overlapping ship group, at most four in flight. A note in the arguments overrides the grouping: `/ship-fleet the 2 ready tickets are both dashboard but touch different areas, start them in parallel`.
 
 ### Running it day to day
 
-- **Two tabs.** One long-lived tab only ships and checks status. Refining happens in a fresh tab per ticket. Once a ticket is `agent:ready`, `/ship` it from the ship tab and refine the next one while it builds.
+- **Two tabs.** One long-lived tab only ships and checks status. Refining happens in a fresh tab per ticket. Once a ticket is `agent:ready`, `/ship-ticket` it from the ship tab and refine the next one while it builds.
 - **`/ship-status`** shows what is running, what is waiting on a merge, and what needs you. Follow-up asks go in its arguments: `/ship-status and pull main`.
 - **Hold a merge** by adding the `no-automerge` label to the issue or PR. The agent leaves the PR open and says why.
 - **When a run stops short** (red CI after its one fix, a review comment it rejected), finish it with `/fix-pr <pr>`.
@@ -125,7 +125,7 @@ Every 5 minutes the tick takes a lock, then:
 2. **Checks the runs.** A ticket on `agent:working` or `agent:review` whose session is not live (not `working` or `blocked`, or its transcript untouched for `STALE_MINUTES`) is resumed once with `claude --bg --resume`. Stale again after that, it is relabelled `agent:failed` with a comment. A ticket with no matching session at all is flagged, never relabelled. A launch whose `/ship-bg` ended without claiming its ticket is relabelled `agent:failed` too, so the factory does not relaunch it every tick.
 3. **Finds work.** Ready tickets grouped by repo. A repo launches only when `setup-repo.sh` has marked it set up, nothing is in flight there (asked of the repo directly, since search trails label changes), and no launch from the last 10 minutes is still starting.
 4. **Checks usage.** `claude -p /usage` costs nothing and reports the 5-hour and weekly limits. At or above `SESSION_MAX_PCT` or `WEEKLY_MAX_PCT` the gate closes until the reset time and `/usage` is not called again before then. A per-model weekly limit skips only that model's tickets.
-5. **Launches** the oldest ready ticket in each free repo from its clone, with the same flags `/ship` uses, on the model the `model:*` label names or `DEFAULT_MODEL`.
+5. **Launches** the oldest ready ticket in each free repo from its clone, with the same flags `/ship-ticket` uses, on the model the `model:*` label names or `DEFAULT_MODEL`.
 6. **Renders the dashboard** and writes the last-tick heartbeat.
 
 Idle ticks, with nothing ready and nothing changed, exit in about a second without starting Claude. Pushover alerts go out once each for a failed ticket, a held PR, a ticket with no agent, a repo that needs setup, and a run of failing ticks (until one gets through, as in a GitHub outage). A ticket relabelled `agent:ready` and run again can alert once more.
@@ -174,7 +174,7 @@ All but `ship-fleet` are user-invoked only (`disable-model-invocation`). They re
 - **Shipping:** backups, and live and healthy checks after a merge. Without it, tickets still ship and merge. Their after-merge steps go to a human, and deploys are reported unverified.
 - **Ship groups:** which directories may ship in parallel. Only `ship-fleet` reads it. Without it, each top-level app directory is its own group. The factory runs one ticket per repo at a time and never needs it.
 
-- `ship` — launch a background agent that ships one ready issue
+- `ship-ticket` — launch a background agent that ships one ready issue
 - `ship-bg` — the background loop: implement, review, fix, open the PR, merge when the gates hold, run the after-merge steps
 - `ship-fleet` — dispatch several ready issues at once, one per non-overlapping group
 - `ship-status` — one table of running ship agents, claimed tickets and open PRs

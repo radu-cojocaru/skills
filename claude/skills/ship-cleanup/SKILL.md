@@ -1,10 +1,10 @@
 ---
 name: ship-cleanup
-description: Remove what finished /ship runs left behind — merged worktrees, their branches, stale refs, and dead background-agent records.
+description: Remove what finished /ship-ticket runs left behind — merged worktrees, their branches, stale refs, and dead background-agent records.
 disable-model-invocation: true
 ---
 
-A finished `/ship` leaves five things behind, and none of them clears itself:
+A finished `/ship-ticket` leaves five things behind, and none of them clears itself:
 
 | Left behind                                   | Goes away on its own?       |
 | --------------------------------------------- | --------------------------- |
@@ -82,8 +82,8 @@ name carries a number, its working tree is clean, and its PR is `MERGED`.
 Anything else is listed under `Kept:` with the reason, and `--apply` refuses it
 too. So a run during active work is a no-op.
 
-**The number is what separates a `/ship` worktree from a hand-made one.**
-`/ship` always names its worktree after the ticket, so a digit is the mark of a
+**The number is what separates a `/ship-ticket` worktree from a hand-made one.**
+`/ship-ticket` always names its worktree after the ticket, so a digit is the mark of a
 machine-made one; `crawler-render` has none and is never touched, even with a
 clean tree and a merged PR. It is a heuristic, not a proof — a hand-made
 worktree called `fix-utf8` would still qualify — so the clean-tree and merged

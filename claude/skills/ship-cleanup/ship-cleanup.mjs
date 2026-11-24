@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Clears what a finished /ship run leaves behind: the git worktree under
+// Clears what a finished /ship-ticket run leaves behind: the git worktree under
 // .claude/worktrees/, its local branch, stale origin/* refs, and the
 // ~/.claude/jobs/<id> record of a background agent that is no longer running.
 //
 // Dry run by default — pass --apply to actually remove anything. A worktree
 // is removed only when its directory name carries a number (so it came from
-// /ship, not from a hand-made one like `crawler-render`), its tree is clean,
+// /ship-ticket, not from a hand-made one like `crawler-render`), its tree is clean,
 // and its PR is MERGED — so a run that finds work in progress is a no-op that
 // says why.
 //
@@ -57,7 +57,7 @@ function shipWorktrees() {
 }
 
 /** The branch name GitHub knows this worktree by. The local branch can differ
- *  from what was pushed — /ship names its worktree branch `worktree-ship-N`
+ *  from what was pushed — /ship-ticket names its worktree branch `worktree-ship-N`
  *  while the PR head is `ship-N` — and a PR is only findable by its head. */
 function remoteBranchFor(path, localBranch) {
   const upstream = run(
@@ -108,7 +108,7 @@ function isDirty(path) {
 
 /**
  * Only worktrees whose directory name carries a digit are ours to remove.
- * `/ship` names every worktree after its ticket, so a number is the mark of a
+ * `/ship-ticket` names every worktree after its ticket, so a number is the mark of a
  * machine-made one; a hand-made worktree like `crawler-render` has none and is
  * left alone even when its branch has landed and its tree is clean.
  *
